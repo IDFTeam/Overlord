@@ -97,9 +97,15 @@ func launchDeferredUpdateScript(sourcePath string, targetPath string) error {
 		return err
 	}
 
-	cmd := exec.Command("cmd.exe", "/D", "/Q", "/C", scriptPath)
+	cmd := exec.Command("cmd.exe", "/C", scriptPath)
 	cmd.Dir = filepath.Dir(scriptPath)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NEW_CONSOLE}
+	nullFile, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err == nil {
+		cmd.Stdin = nullFile
+		cmd.Stdout = nullFile
+		cmd.Stderr = nullFile
+	}
 	log.Printf("agent_update[win]: deferred updater script=%q debugLog=%q cmd=%q args=%v", scriptPath, debugLogPath, cmd.Path, cmd.Args)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start deferred updater: %w", err)

@@ -263,10 +263,36 @@ async function downloadAndExtract(
   logger.info(`[toolchain] installed ${key} at ${rootDir}`);
 }
 
+function tryResolveFromPath(key: ToolchainKey): EnsuredToolchain | null {
+  const m = MANIFESTS[key];
+  const primaryBin = m.ccBasename || m.binaryFilename;
+  if (!primaryBin) return null;
+
+  const found = Bun.which(primaryBin);
+  if (!found) return null;
+
+  const binDir = path.dirname(found);
+  return {
+    key,
+    rootDir: path.dirname(binDir),
+    binDir,
+    ccPath: m.ccBasename ? found : undefined,
+    cxxPath: m.cxxBasename ? (Bun.which(m.cxxBasename) ?? path.join(binDir, m.cxxBasename)) : undefined,
+    arPath: m.arBasename ? (Bun.which(m.arBasename) ?? path.join(binDir, m.arBasename)) : undefined,
+  };
+}
+
 export async function ensureToolchain(
   key: ToolchainKey,
   send: SendToStream,
 ): Promise<EnsuredToolchain> {
+  const fromPath = tryResolveFromPath(key);
+  if (fromPath) {
+    logger.info(`[toolchain] using ${key} from PATH: ${fromPath.binDir}`);
+    send({ type: "output", text: `[toolchain] Using system ${MANIFESTS[key].displayName} from PATH\n`, level: "info" });
+    return fromPath;
+  }
+
   if (isInstalled(key)) {
     return resolveEnsured(key);
   }

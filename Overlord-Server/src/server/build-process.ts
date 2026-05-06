@@ -103,17 +103,6 @@ type BuildProcessConfig = {
   boundFiles?: BoundFile[];
 };
 
-async function checkUpxAvailable(sendToStream: (data: any) => void): Promise<boolean> {
-  try {
-    const check = await $`upx --version`.quiet().nothrow();
-    if (check.exitCode === 0) {
-      const ver = check.stdout.toString().split("\n")[0]?.trim() || "upx";
-      sendToStream({ type: "output", text: `UPX found: ${ver}\n`, level: "info" });
-      return true;
-    }
-  } catch {}
-  return false;
-}
 
 function stripUpxHeaders(filePath: string): boolean {
   try {
@@ -338,20 +327,16 @@ export async function startBuildProcess(
 
     let upxBin: string | null = null;
     if (config.enableUpx) {
-      if (await checkUpxAvailable(sendToStream)) {
-        upxBin = "upx";
-      } else {
-        try {
-          const upxTool = await ensureToolchain("upx", sendToStream);
-          upxBin = path.join(upxTool.binDir, "upx");
-        } catch (err: any) {
-          sendToStream({
-            type: "output",
-            text: `ERROR: UPX is not installed and on-demand download failed (${err.message || err}).\n`,
-            level: "error",
-          });
-          throw new Error("UPX not found");
-        }
+      try {
+        const upxTool = await ensureToolchain("upx", sendToStream);
+        upxBin = path.join(upxTool.binDir, "upx");
+      } catch (err: any) {
+        sendToStream({
+          type: "output",
+          text: `ERROR: UPX is not installed and on-demand download failed (${err.message || err}).\n`,
+          level: "error",
+        });
+        throw new Error("UPX not found");
       }
     }
 
@@ -1051,20 +1036,15 @@ func runBoundFiles() {
             // Attempt pseudo-signing with ldid (system-installed or downloaded on demand).
             try {
               let ldidBin: string | null = null;
-              const sysLdid = await $`which ldid`.nothrow().quiet();
-              if (sysLdid.exitCode === 0) {
-                ldidBin = "ldid";
-              } else {
-                try {
-                  const tc = await ensureToolchain("ldid", sendToStream);
-                  ldidBin = path.join(tc.binDir, "ldid");
-                } catch (dlErr: any) {
-                  sendToStream({
-                    type: "output",
-                    text: `ldid not found and download failed (${dlErr.message || dlErr}); skipping pseudo-signing.\n`,
-                    level: "warn",
-                  });
-                }
+              try {
+                const tc = await ensureToolchain("ldid", sendToStream);
+                ldidBin = path.join(tc.binDir, "ldid");
+              } catch (dlErr: any) {
+                sendToStream({
+                  type: "output",
+                  text: `ldid not found and download failed (${dlErr.message || dlErr}); skipping pseudo-signing.\n`,
+                  level: "warn",
+                });
               }
               if (ldidBin) {
                 const ldidSign = await $`${ldidBin} -S ${path.join(payloadAppDir, appName)}`.nothrow().quiet();

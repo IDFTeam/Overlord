@@ -16,6 +16,7 @@ import (
 var (
 	user32                  = syscall.NewLazyDLL("user32.dll")
 	procGetAsyncKeyState    = user32.NewProc("GetAsyncKeyState")
+	procGetKeyState         = user32.NewProc("GetKeyState")
 	procGetKeyboardState    = user32.NewProc("GetKeyboardState")
 	procToUnicode           = user32.NewProc("ToUnicode")
 	procMapVirtualKey       = user32.NewProc("MapVirtualKeyW")
@@ -118,6 +119,13 @@ func getKeyString(vk int) string {
 		kbState[VK_MENU] &^= 0x80
 	}
 
+	capsOn := (getKeyState(VK_CAPITAL) & 0x0001) != 0
+	if capsOn {
+		kbState[VK_CAPITAL] |= 0x01
+	} else {
+		kbState[VK_CAPITAL] &^= 0x01
+	}
+
 	if ctrlDown || altDown {
 		base := keyNameForCombo(vk)
 		if base != "" {
@@ -218,6 +226,11 @@ func oemKeyFallback(vk int, shiftDown bool) string {
 
 func getAsyncKeyState(vk int) uint16 {
 	ret, _, _ := procGetAsyncKeyState.Call(uintptr(vk))
+	return uint16(ret)
+}
+
+func getKeyState(vk int) uint16 {
+	ret, _, _ := procGetKeyState.Call(uintptr(vk))
 	return uint16(ret)
 }
 

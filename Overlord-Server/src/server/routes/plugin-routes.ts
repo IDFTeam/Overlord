@@ -953,6 +953,7 @@ export async function handlePluginRoutes(
       metrics.recordCommand("plugin_rpc");
       return Response.json({ ok: true, result });
     } catch (err) {
+      console.error(`[plugin:${pluginId}] RPC ${method} error:`, (err as Error).message, (err as Error).stack || "");
       return Response.json({ ok: false, error: (err as Error).message }, { status: 500 });
     }
   }

@@ -111,6 +111,8 @@ self.onmessage = async (e: MessageEvent<WorkerInbound>) => {
       send({ type: "rpc_reply", id: msg.id, ok: true, result: result ?? null });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack || "" : "";
+      console.error(`[plugin-worker] RPC ${msg.method} error: ${error}`, stack);
       send({ type: "rpc_reply", id: msg.id, ok: false, error });
     }
     return;

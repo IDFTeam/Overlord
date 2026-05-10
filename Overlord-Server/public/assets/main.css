@@ -3753,11 +3753,21 @@ body.sb-collapsed .sb-link-child {
   outline-offset: 2px;
 }
 
+#top-nav {
+  transition: transform 0.3s var(--sb-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+body.sb-ready #top-nav {
+  transition: transform 0.3s var(--sb-ease, cubic-bezier(0.4, 0, 0.2, 1)),
+              width var(--sb-speed, 240ms) var(--sb-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+#sb-mobile-bar {
+  transition: transform 0.3s var(--sb-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
 /* ---- Topbar hidden state ---- */
 body.nav-hidden:not(.sb-ready) #top-nav {
   transform: translateY(-100%);
   pointer-events: none;
-  transition: transform 0.3s var(--sb-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 body.nav-hidden:not(.sb-ready) #nav-reveal-btn {
   display: flex;
@@ -3770,17 +3780,14 @@ body.nav-hidden:not(.sb-ready) #nav-reveal-btn {
 /* ---- Sidebar hidden state ---- */
 body.sb-ready.nav-hidden {
   padding-left: 0 !important;
-  transition: padding-left 0.3s var(--sb-ease);
 }
 body.sb-ready.nav-hidden #top-nav {
   transform: translateX(calc(-1 * var(--sb-w) - 2px));
   pointer-events: none;
-  transition: transform 0.3s var(--sb-ease), width var(--sb-speed) var(--sb-ease);
 }
 body.sb-ready.nav-hidden #sb-mobile-bar {
   transform: translateY(-100%);
   pointer-events: none;
-  transition: transform 0.3s var(--sb-ease);
 }
 body.sb-ready.nav-hidden #nav-reveal-btn {
   display: flex;

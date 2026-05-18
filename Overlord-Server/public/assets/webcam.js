@@ -54,6 +54,9 @@ import { P2PClient } from "./webrtc-p2p.js";
   let selectedDeviceIndex = 0;
   let hasRenderedFrame = false;
   let drawPending = false;
+  let clientOs = "";
+  let clientIsAdmin = false;
+  let firewallWarningAcked = false;
 
   const codecPrefKey = "webcamCodecPreferH264";
   let prefersH264 = typeof VideoDecoder === "function";
@@ -438,6 +441,8 @@ import { P2PClient } from "./webrtc-p2p.js";
       return;
     }
     if (msg.type === "ready") {
+      if (msg.os) clientOs = String(msg.os).toLowerCase();
+      if (msg.isAdmin !== undefined) clientIsAdmin = !!msg.isAdmin;
       setStreamState("idle", "Ready");
       return;
     }
@@ -496,10 +501,23 @@ import { P2PClient } from "./webrtc-p2p.js";
     };
   }
 
+  function needsWebrtcFirewallWarning(mode) {
+    if (firewallWarningAcked) return false;
+    if (mode !== "relayed" && mode !== "p2p") return false;
+    const isWindows = clientOs.includes("windows") || clientOs.includes("win");
+    return isWindows && !clientIsAdmin;
+  }
+
   startBtn.addEventListener("click", () => {
+    const mode = getWebrtcMode();
+    if (needsWebrtcFirewallWarning(mode)) {
+      if (!confirm("This agent is not elevated. Starting WebRTC will trigger a Windows Defender Firewall prompt on the target machine.\n\nContinue?")) {
+        return;
+      }
+      firewallWarningAcked = true;
+    }
     desiredStreaming = true;
     applyFpsSettings();
-    const mode = getWebrtcMode();
     if (mode === "relayed") {
       // Server replies with webrtc_ready; startWhep happens then.
       send("webcam_start", { webrtc: true });

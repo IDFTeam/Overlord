@@ -101,6 +101,9 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
   let lastClipboardText = "";
   let clipboardSyncActive = false;
   let elevationPending = false;
+  let clientOs = "";
+  let clientIsAdmin = false;
+  let firewallWarningAcked = false;
 
   function resetH264RuntimeState() {
     h264TimestampUs = 0;
@@ -799,6 +802,8 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
       const client = data.items.find((c) => c.id === activeClientId);
       if (client) {
         clientLabel.textContent = `${client.host || client.id} (${client.os || ""})`;
+        clientOs = (client.os || "").toLowerCase();
+        clientIsAdmin = !!client.isAdmin;
       }
       if (client) {
         populateDisplays(client.monitors, client.monitorInfo);
@@ -874,7 +879,21 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     });
   });
 
+  function needsWebrtcFirewallWarning(mode) {
+    if (firewallWarningAcked) return false;
+    if (mode !== "relayed" && mode !== "p2p") return false;
+    const isWindows = clientOs.includes("windows") || clientOs.includes("win");
+    return isWindows && !clientIsAdmin;
+  }
+
   startBtn.addEventListener("click", function () {
+    const mode = getWebrtcMode();
+    if (needsWebrtcFirewallWarning(mode)) {
+      if (!confirm("This agent is not elevated. Starting WebRTC will trigger a Windows Defender Firewall prompt on the target machine.\n\nContinue?")) {
+        return;
+      }
+      firewallWarningAcked = true;
+    }
     if (displaySelect && displaySelect.value !== undefined) {
       sendCmd("desktop_select_display", {
         display: parseInt(displaySelect.value, 10) || 0,
@@ -888,7 +907,6 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     lastFrameAt = 0;
     resetH264SessionState();
     setStreamState("starting", "Starting stream");
-    const mode = getWebrtcMode();
     if (mode === "relayed") {
       // Server replies with `webrtc_ready { whepPath }`; startWhep happens then.
       sendCmd("desktop_start", { webrtc: true });

@@ -66,6 +66,7 @@ var (
 )
 
 func Start(ctx context.Context, kind Kind, opts Options) (*Publisher, error) {
+	ensureFirewallRule()
 	if strings.TrimSpace(opts.WhipURL) == "" {
 		return nil, errors.New("webrtcpub: empty WhipURL")
 	}

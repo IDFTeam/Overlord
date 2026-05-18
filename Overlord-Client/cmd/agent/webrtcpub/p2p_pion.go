@@ -41,6 +41,7 @@ func p2pSessionKey(kind Kind, sessionID string) string {
 // browser side decides via its transceivers what to ask for. Trickle ICE
 // candidates emitted by Pion are delivered to opts.OnICE.
 func StartP2POffer(ctx context.Context, kind Kind, sessionID string, offerSDP string, opts P2POfferCallbacks, hasVideo, hasAudio bool) (string, error) {
+	ensureFirewallRule()
 	_ = ctx
 	if sessionID == "" {
 		return "", errors.New("webrtcpub: empty sessionID")

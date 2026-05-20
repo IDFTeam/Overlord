@@ -4,6 +4,7 @@ import {
   getNotificationsEnabled,
   subscribeStatus,
   subscribeUnread,
+  markAllNotificationsRead,
 } from "./notify-client.js";
 
 import { mountNav } from "./nav/template.js";
@@ -107,10 +108,21 @@ if (host) {
     }
   };
 
-  refs.notifyToggle?.addEventListener("click", () => {
+  let lastNotifyClickTime = 0;
+  const DOUBLE_CLICK_WINDOW_MS = 700;
+  refs.notifyToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const now = Date.now();
+    const isSecondClick = now - lastNotifyClickTime < DOUBLE_CLICK_WINDOW_MS;
+    lastNotifyClickTime = isSecondClick ? 0 : now;
+
     const next = !getNotificationsEnabled();
     setNotificationsEnabled(next);
     updateToggle();
+
+    if (isSecondClick) {
+      markAllNotificationsRead();
+    }
   });
 
   subscribeUnread((count) => {

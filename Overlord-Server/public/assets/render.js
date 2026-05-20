@@ -10,6 +10,37 @@ import {
 } from "./viewUtils.js";
 import { applyImageSrcSmooth } from "./thumbnail-loader.js";
 
+function wireThumbImg(img) {
+  if (!(img instanceof HTMLImageElement) || img.dataset.thumbErrWired === "1") return;
+  img.dataset.thumbErrWired = "1";
+  const handleError = () => {
+    img.style.display = "none";
+    img.removeAttribute("src");
+    img.removeAttribute("data-thumb-url");
+  };
+  img.addEventListener("error", handleError);
+  if (img.complete && img.src && !img.naturalWidth) handleError();
+}
+
+if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      m.addedNodes.forEach((n) => {
+        if (!(n instanceof HTMLElement)) return;
+        if (n.matches?.("img[data-thumb-img]")) wireThumbImg(n);
+        n.querySelectorAll?.("img[data-thumb-img]").forEach(wireThumbImg);
+      });
+    }
+  });
+  const start = () => {
+    if (!document.body) return;
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.querySelectorAll("img[data-thumb-img]").forEach(wireThumbImg);
+  };
+  if (document.body) start();
+  else document.addEventListener("DOMContentLoaded", start, { once: true });
+}
+
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
@@ -94,9 +125,7 @@ function thumbHtml(client, { width, height, small = false } = {}) {
            loading="lazy"
            decoding="async"
            ${initialSrc ? `src="${initialSrc}" data-thumb-url="${initialSrc}"` : ""}
-           style="${initialDisplay}"
-           onload="this.style.display='block'"
-           onerror="this.style.display='none';this.removeAttribute('src');this.removeAttribute('data-thumb-url')">
+           style="${initialDisplay}">
     </div>`;
 }
 

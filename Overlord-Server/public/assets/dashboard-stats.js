@@ -3,6 +3,14 @@ let metricsTimer = null;
 let onlineChart = null;
 let osChart = null;
 const STATS_COLLAPSED_KEY = "overlord_dashboard_stats_collapsed";
+const STATS_HEIGHT_KEY = "overlord_dashboard_stats_height";
+const STATS_ORDER_KEY = "overlord_dashboard_stats_order";
+const PULSE_ORDER_KEY = "overlord_dashboard_pulse_order";
+const DEFAULT_STATS_HEIGHT = 142;
+const MIN_STATS_HEIGHT = 112;
+const MAX_STATS_HEIGHT = 280;
+const DEFAULT_CARD_ORDER = ["online", "sessions", "trend", "fleet", "pulse"];
+const DEFAULT_PULSE_ORDER = ["api", "memory", "ping"];
 
 const palette = {
   text: "#cbd5e1",
@@ -10,7 +18,7 @@ const palette = {
   border: "rgba(100, 116, 139, 0.18)",
   panel: "rgba(15, 23, 42, 0.96)",
   cyan: "#22d3ee",
-  emerald: "#34d399",
+  emerald: "#22c55e",
   sky: "#38bdf8",
   indigo: "#818cf8",
   amber: "#fbbf24",
@@ -166,8 +174,8 @@ function makeCharts() {
       datasets: [{
         label: "Online",
         data: [],
-        borderColor: palette.cyan,
-        backgroundColor: createGradient(onlineCtx, palette.cyan),
+        borderColor: palette.emerald,
+        backgroundColor: createGradient(onlineCtx, palette.emerald),
         borderWidth: 2,
         fill: true,
         tension: 0.38,
@@ -184,7 +192,7 @@ function makeCharts() {
         legend: { display: false },
         tooltip: {
           backgroundColor: palette.panel,
-          borderColor: "rgba(56, 189, 248, 0.32)",
+          borderColor: "rgba(34, 197, 94, 0.34)",
           borderWidth: 1,
           titleColor: "#e2e8f0",
           bodyColor: palette.text,
@@ -225,6 +233,9 @@ function makeCharts() {
       maintainAspectRatio: false,
       animation: { duration: 260 },
       cutout: "66%",
+      layout: {
+        padding: { top: 2, right: 4, bottom: 10, left: 4 },
+      },
       plugins: {
         legend: {
           position: "right",
@@ -247,6 +258,37 @@ function makeCharts() {
     },
   });
   return true;
+}
+
+function getSavedHeight() {
+  return normalizeHeight(localStorage.getItem(STATS_HEIGHT_KEY) || DEFAULT_STATS_HEIGHT);
+}
+
+function normalizeHeight(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return DEFAULT_STATS_HEIGHT;
+  return Math.min(MAX_STATS_HEIGHT, Math.max(MIN_STATS_HEIGHT, n));
+}
+
+function applyHeightMode(height) {
+  const shell = $("dashboard-stats");
+  if (!shell) return;
+  shell.classList.toggle("is-compact", height < 142);
+  shell.classList.toggle("is-tiny", height < 122);
+
+  const healthRows = Array.from(shell.querySelectorAll(".dashboard-health-row"));
+  const visibleCount = height < 122 ? 1 : height < 146 ? 2 : healthRows.length;
+  healthRows.forEach((row, index) => {
+    row.classList.toggle("is-hidden", index >= visibleCount);
+  });
+
+  if (osChart) {
+    const nextDisplay = height >= 172;
+    if (osChart.options.plugins.legend.display !== nextDisplay) {
+      osChart.options.plugins.legend.display = nextDisplay;
+      osChart.update("none");
+    }
+  }
 }
 
 function updateOnlineChart(history, snapshot) {
@@ -345,7 +387,9 @@ export function initDashboardStats() {
   if (initialized) return;
   initialized = true;
   if (!makeCharts()) {
-    setTimeout(makeCharts, 150);
+    setTimeout(() => {
+      if (makeCharts()) applyHeightMode(getSavedHeight());
+    }, 150);
   }
   initStatsToggle();
   fetchDashboardMetrics();
@@ -355,7 +399,25 @@ export function initDashboardStats() {
 function initStatsToggle() {
   const shell = $("dashboard-stats");
   const button = $("dashboard-stats-toggle");
+  const resetButton = $("dashboard-stats-reset");
+  const resizer = $("dashboard-stats-resizer");
   if (!shell || !button) return;
+
+  const resizeCharts = () => {
+    requestAnimationFrame(() => {
+      onlineChart?.resize();
+      osChart?.resize();
+    });
+  };
+
+  const setHeight = (value, persist = true) => {
+    const height = normalizeHeight(value);
+    shell.style.setProperty("--dashboard-stats-height", `${height}px`);
+    resizer?.setAttribute("aria-valuenow", String(height));
+    if (persist) localStorage.setItem(STATS_HEIGHT_KEY, String(height));
+    applyHeightMode(height);
+    resizeCharts();
+  };
 
   const setCollapsed = (collapsed) => {
     shell.classList.toggle("is-collapsed", collapsed);
@@ -367,16 +429,222 @@ function initStatsToggle() {
     localStorage.setItem(STATS_COLLAPSED_KEY, collapsed ? "true" : "false");
   };
 
+  initCardReorder();
+  initPulseReorder();
+  setHeight(getSavedHeight(), false);
   setCollapsed(localStorage.getItem(STATS_COLLAPSED_KEY) === "true");
+
+  let dragStartY = 0;
+  let dragStartHeight = DEFAULT_STATS_HEIGHT;
+
+  const stopResize = () => {
+    shell.classList.remove("is-resizing");
+    resizer?.releasePointerCapture?.(resizer._activePointerId);
+    resizer._activePointerId = null;
+  };
+
+  resizer?.setAttribute("aria-valuemin", String(MIN_STATS_HEIGHT));
+  resizer?.setAttribute("aria-valuemax", String(MAX_STATS_HEIGHT));
+  resizer?.addEventListener("pointerdown", (e) => {
+    if (shell.classList.contains("is-collapsed")) return;
+    dragStartY = e.clientY;
+    dragStartHeight = getSavedHeight();
+    resizer._activePointerId = e.pointerId;
+    resizer.setPointerCapture?.(e.pointerId);
+    shell.classList.add("is-resizing");
+    e.preventDefault();
+  });
+
+  resizer?.addEventListener("pointermove", (e) => {
+    if (!shell.classList.contains("is-resizing")) return;
+    setHeight(dragStartHeight + (e.clientY - dragStartY));
+  });
+
+  resizer?.addEventListener("pointerup", stopResize);
+  resizer?.addEventListener("pointercancel", stopResize);
+  resizer?.addEventListener("keydown", (e) => {
+    if (shell.classList.contains("is-collapsed")) return;
+    const current = getSavedHeight();
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHeight(current - 10);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHeight(current + 10);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setHeight(MIN_STATS_HEIGHT);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setHeight(MAX_STATS_HEIGHT);
+    }
+  });
+
+  resetButton?.addEventListener("click", () => {
+    setHeight(DEFAULT_STATS_HEIGHT);
+    setCollapsed(false);
+    localStorage.removeItem(STATS_ORDER_KEY);
+    localStorage.removeItem(PULSE_ORDER_KEY);
+    const content = $("dashboard-stats-content");
+    if (content) applySavedOrder(content);
+    const pulseList = document.querySelector(".dashboard-health-list");
+    if (pulseList) applyPulseOrder(pulseList);
+  });
+
   button.addEventListener("click", () => {
     const nextCollapsed = !shell.classList.contains("is-collapsed");
     setCollapsed(nextCollapsed);
-    if (!nextCollapsed) {
-      requestAnimationFrame(() => {
-        onlineChart?.resize();
-        osChart?.resize();
-      });
-    }
+    if (!nextCollapsed) resizeCharts();
+  });
+}
+
+function readSavedPulseOrder() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PULSE_ORDER_KEY) || "[]");
+    if (!Array.isArray(parsed)) return DEFAULT_PULSE_ORDER;
+    const cleaned = parsed.filter((id) => DEFAULT_PULSE_ORDER.includes(id));
+    return [...cleaned, ...DEFAULT_PULSE_ORDER.filter((id) => !cleaned.includes(id))];
+  } catch {
+    return DEFAULT_PULSE_ORDER;
+  }
+}
+
+function savePulseOrder(list) {
+  const order = Array.from(list.querySelectorAll("[data-pulse-row]"))
+    .map((row) => row.dataset.pulseRow)
+    .filter(Boolean);
+  localStorage.setItem(PULSE_ORDER_KEY, JSON.stringify(order));
+}
+
+function applyPulseOrder(list) {
+  const byId = new Map();
+  list.querySelectorAll("[data-pulse-row]").forEach((row) => {
+    byId.set(row.dataset.pulseRow, row);
+  });
+  for (const id of readSavedPulseOrder()) {
+    const row = byId.get(id);
+    if (row) list.appendChild(row);
+  }
+  applyHeightMode(getSavedHeight());
+}
+
+function initPulseReorder() {
+  const list = document.querySelector(".dashboard-health-list");
+  if (!list || list.dataset.reorderBound === "true") return;
+  list.dataset.reorderBound = "true";
+  applyPulseOrder(list);
+
+  let dragged = null;
+
+  list.addEventListener("dragstart", (e) => {
+    const row = e.target.closest("[data-pulse-row]");
+    if (!row) return;
+    e.stopPropagation();
+    dragged = row;
+    row.classList.add("is-dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", row.dataset.pulseRow || "");
+  });
+
+  list.addEventListener("dragover", (e) => {
+    if (!dragged) return;
+    const target = e.target.closest("[data-pulse-row]");
+    if (!target || target === dragged) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = target.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    list.insertBefore(dragged, after ? target.nextSibling : target);
+    applyHeightMode(getSavedHeight());
+  });
+
+  list.addEventListener("drop", (e) => {
+    if (!dragged) return;
+    e.preventDefault();
+    e.stopPropagation();
+    savePulseOrder(list);
+    applyHeightMode(getSavedHeight());
+  });
+
+  list.addEventListener("dragend", (e) => {
+    e.stopPropagation();
+    dragged?.classList.remove("is-dragging");
+    dragged = null;
+    savePulseOrder(list);
+    applyHeightMode(getSavedHeight());
+  });
+}
+
+function readSavedOrder() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STATS_ORDER_KEY) || "[]");
+    if (!Array.isArray(parsed)) return DEFAULT_CARD_ORDER;
+    const cleaned = parsed.filter((id) => DEFAULT_CARD_ORDER.includes(id));
+    return [...cleaned, ...DEFAULT_CARD_ORDER.filter((id) => !cleaned.includes(id))];
+  } catch {
+    return DEFAULT_CARD_ORDER;
+  }
+}
+
+function saveCurrentOrder(content) {
+  const order = Array.from(content.querySelectorAll("[data-dashboard-card]"))
+    .map((card) => card.dataset.dashboardCard)
+    .filter(Boolean);
+  localStorage.setItem(STATS_ORDER_KEY, JSON.stringify(order));
+}
+
+function applySavedOrder(content) {
+  const byId = new Map();
+  content.querySelectorAll("[data-dashboard-card]").forEach((card) => {
+    byId.set(card.dataset.dashboardCard, card);
+  });
+  for (const id of readSavedOrder()) {
+    const card = byId.get(id);
+    if (card) content.appendChild(card);
+  }
+}
+
+function initCardReorder() {
+  const content = $("dashboard-stats-content");
+  if (!content || content.dataset.reorderBound === "true") return;
+  content.dataset.reorderBound = "true";
+  applySavedOrder(content);
+
+  let dragged = null;
+
+  content.addEventListener("dragstart", (e) => {
+    const card = e.target.closest("[data-dashboard-card]");
+    if (!card) return;
+    dragged = card;
+    card.classList.add("is-dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", card.dataset.dashboardCard || "");
+  });
+
+  content.addEventListener("dragover", (e) => {
+    if (!dragged) return;
+    const target = e.target.closest("[data-dashboard-card]");
+    if (!target || target === dragged) return;
+    e.preventDefault();
+    const rect = target.getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2 || e.clientX > rect.left + rect.width / 2;
+    content.insertBefore(dragged, after ? target.nextSibling : target);
+  });
+
+  content.addEventListener("drop", (e) => {
+    if (!dragged) return;
+    e.preventDefault();
+    saveCurrentOrder(content);
+  });
+
+  content.addEventListener("dragend", () => {
+    dragged?.classList.remove("is-dragging");
+    dragged = null;
+    saveCurrentOrder(content);
+    requestAnimationFrame(() => {
+      onlineChart?.resize();
+      osChart?.resize();
+    });
   });
 }
 

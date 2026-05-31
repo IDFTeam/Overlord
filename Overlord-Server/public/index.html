@@ -25,32 +25,25 @@
     <header id="top-nav"></header>
     <main class="px-5 py-6">
       <div id="clients-shell" class="w-full flex flex-col gap-5">
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h1 class="text-2xl font-semibold">Clients</h1>
-            <p class="text-slate-400">KDOT wants YOU to have a good day!</p>
-            <p id="server-version-text" class="text-xs text-slate-500 mt-1">
-              Server version: loading...
-            </p>
-          </div>
-          <span
-            class="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-slate-800/70 text-slate-300 border border-slate-600/60"
-            id="total-pill"
-            >0 online</span
-          >
-        </div>
+        <span id="total-pill" class="hidden">0 online</span>
         <section id="dashboard-stats" class="dashboard-stats-shell" aria-label="Dashboard status">
           <div class="dashboard-stats-bar">
             <div class="dashboard-stats-title">
               <i class="fa-solid fa-chart-simple"></i>
               <span>Status overview</span>
+              <span id="server-version-text" class="dashboard-version-text">Server version: loading...</span>
             </div>
-            <button id="dashboard-stats-toggle" class="dashboard-stats-toggle" type="button" aria-expanded="true" title="Hide status overview">
-              <i class="fa-solid fa-eye-slash"></i>
-            </button>
+            <div class="dashboard-stats-controls" aria-label="Status overview controls">
+              <button id="dashboard-stats-reset" class="dashboard-stats-toggle" type="button" title="Reset status overview">
+                <i class="fa-solid fa-arrow-rotate-left"></i>
+              </button>
+              <button id="dashboard-stats-toggle" class="dashboard-stats-toggle" type="button" aria-expanded="true" title="Hide status overview">
+                <i class="fa-solid fa-eye-slash"></i>
+              </button>
+            </div>
           </div>
           <div id="dashboard-stats-content" class="dashboard-stats-content">
-          <div class="dashboard-stat-card dashboard-stat-card--online">
+          <div class="dashboard-stat-card dashboard-stat-card--online" data-dashboard-card="online" draggable="true">
             <div class="dashboard-stat-topline">
               <span class="dashboard-live-dot is-live"></span>
               <span>Online</span>
@@ -61,7 +54,7 @@
               <span id="dash-online-ratio">0%</span>
             </div>
           </div>
-          <div class="dashboard-stat-card dashboard-stat-card--sessions">
+          <div class="dashboard-stat-card dashboard-stat-card--sessions" data-dashboard-card="sessions" draggable="true">
             <div class="dashboard-stat-topline">
               <i class="fa-solid fa-wave-square"></i>
               <span>Sessions</span>
@@ -72,7 +65,7 @@
               <span id="dash-http-errors">0 errors</span>
             </div>
           </div>
-          <div class="dashboard-chart-card">
+          <div class="dashboard-chart-card" data-dashboard-card="trend" draggable="true">
             <div class="dashboard-chart-head">
               <div>
                 <span class="dashboard-chart-kicker">Past Week</span>
@@ -84,7 +77,7 @@
               <canvas id="dash-online-chart"></canvas>
             </div>
           </div>
-          <div class="dashboard-chart-card">
+          <div class="dashboard-chart-card" data-dashboard-card="fleet" draggable="true">
             <div class="dashboard-chart-head">
               <div>
                 <span class="dashboard-chart-kicker">Fleet Mix</span>
@@ -96,7 +89,7 @@
               <canvas id="dash-os-chart"></canvas>
             </div>
           </div>
-          <div class="dashboard-health-card">
+          <div class="dashboard-health-card" data-dashboard-card="pulse" draggable="true">
             <div class="dashboard-chart-head">
               <div>
                 <span class="dashboard-chart-kicker">Status</span>
@@ -105,23 +98,33 @@
               <span id="dash-last-refresh" class="dashboard-chart-pill">Waiting</span>
             </div>
             <div class="dashboard-health-list">
-              <div class="dashboard-health-row">
+              <div class="dashboard-health-row" data-pulse-row="api" draggable="true">
                 <span class="dashboard-live-dot is-live"></span>
                 <span>API</span>
                 <strong id="dash-api-status">Live</strong>
               </div>
-              <div class="dashboard-health-row">
+              <div class="dashboard-health-row" data-pulse-row="memory" draggable="true">
                 <span id="dash-memory-dot" class="dashboard-live-dot is-live"></span>
                 <span>Memory</span>
                 <strong id="dash-memory-status">0%</strong>
               </div>
-              <div class="dashboard-health-row">
+              <div class="dashboard-health-row" data-pulse-row="ping" draggable="true">
                 <span id="dash-ping-dot" class="dashboard-live-dot is-muted"></span>
                 <span>Ping Avg</span>
                 <strong id="dash-ping-status">-</strong>
               </div>
             </div>
           </div>
+          </div>
+          <div
+            id="dashboard-stats-resizer"
+            class="dashboard-stats-resizer"
+            role="separator"
+            aria-orientation="horizontal"
+            tabindex="0"
+            title="Drag to resize status overview"
+          >
+            <span></span>
           </div>
         </section>
         <div class="dashboard-toolbar">

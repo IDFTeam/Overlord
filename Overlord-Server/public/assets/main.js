@@ -89,11 +89,15 @@ window.setDashboardPageBounds = (currentPage, totalPages) => {
   }
 };
 
-function setServerVersionLabel(version) {
+function setServerVersionLabel(version, tone = "ok") {
   if (!serverVersionText) return;
   serverVersionText.textContent = "Server version: ";
   const value = document.createElement("span");
-  value.className = "server-version-number";
+  value.className = tone === "bad"
+    ? "server-version-number-mismatch"
+    : tone === "warn"
+      ? "server-version-number-warning"
+      : "server-version-number";
   value.textContent = version;
   serverVersionText.appendChild(value);
 }
@@ -103,16 +107,16 @@ async function loadServerVersion() {
   try {
     const res = await fetch("/api/version", { credentials: "include" });
     if (!res.ok) {
-      serverVersionText.textContent = "Server version: unavailable";
+      setServerVersionLabel("unavailable", "bad");
       return;
     }
     const payload = await res.json();
     const version = typeof payload?.version === "string" && payload.version.trim()
       ? payload.version.trim()
       : "unknown";
-    setServerVersionLabel(version);
+    setServerVersionLabel(version, version === "unknown" ? "warn" : "ok");
   } catch {
-    serverVersionText.textContent = "Server version: unavailable";
+    setServerVersionLabel("unavailable", "bad");
   }
 }
 

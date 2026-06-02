@@ -797,6 +797,11 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		capture.SetQualityAndCodec(quality, codec)
 		sendCommandResultSafe(env, cmdID, true, "")
 		return nil
+	case "desktop_request_keyframe":
+		log.Printf("desktop: request h264 keyframe")
+		capture.RequestDesktopH264Keyframe()
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_set_resolution":
 		payload, _ := envelope["payload"].(map[string]interface{})
 		maxH := 0 // default = 1080p cap

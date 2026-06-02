@@ -14,6 +14,13 @@
     <link rel="icon" type="image/x-icon" href="/assets/favicon.ico" />
     <link rel="stylesheet" href="/assets/main.css" />
     <link rel="stylesheet" href="/assets/custom.css" />
+    <style>
+      #rpc-url,
+      #rpc-url option {
+        color: #f1f5f9;
+        background-color: #0f172a;
+      }
+    </style>
     <script defer src="/assets/toast.js"></script>
     <script defer src="/assets/ripple.js"></script>
   </head>
@@ -37,7 +44,7 @@
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-2" for="rpc-url">RPC Endpoint</label>
             <select id="rpc-url"
-              class="w-full px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg focus:outline-none focus:border-purple-500 transition-colors">
+              class="w-full px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-purple-500 transition-colors">
             </select>
             <div id="custom-rpc-wrapper" class="hidden mt-2">
               <input type="text" id="custom-rpc-url" placeholder="https://your-rpc-endpoint.com"
@@ -112,6 +119,6 @@
     </main>
 
     <script type="module" src="/assets/nav.js"></script>
-    <script defer src="/assets/sol-publish.js"></script>
+    <script type="module" src="/assets/sol-publish.js"></script>
   </body>
 </html>

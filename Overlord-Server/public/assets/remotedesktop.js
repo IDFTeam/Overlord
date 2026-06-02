@@ -28,6 +28,10 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
   const refreshBtn = document.getElementById("refreshDisplays");
   const startBtn = document.getElementById("startBtn");
   const stopBtn = document.getElementById("stopBtn");
+  const recordBtn = document.getElementById("recordBtn");
+  const rdRecordingSettingsBtn = document.getElementById("rdRecordingSettingsBtn");
+  const recordMode = document.getElementById("recordMode");
+  const recordFps = document.getElementById("recordFps");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const mouseCtrl = document.getElementById("mouseCtrl");
   const kbdCtrl = document.getElementById("kbdCtrl");
@@ -60,6 +64,9 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
   ws.binaryType = "arraybuffer";
 
   let activeClientId = clientId;
+  let serverRecording = null;
+  let recordingTimer = null;
+  let pendingRecordingDownloadId = "";
   let renderCount = 0;
   let renderWindowStart = performance.now();
   let lastFrameAt = 0;
@@ -427,6 +434,7 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     const isStopping = streamState === "stopping";
     const isStalled = streamState === "stalled";
     const isBlocked = streamState === "offline" || streamState === "disconnected" || streamState === "error";
+    const recordingActive = isRecording();
 
     if (startBtn) {
       startBtn.disabled = !wsOpen || isStarting || isStreaming || isStopping || isBlocked;
@@ -434,6 +442,219 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     if (stopBtn) {
       stopBtn.disabled = !wsOpen || (!isStarting && !isStreaming && !isStopping && !isStalled);
     }
+    if (recordBtn) {
+      recordBtn.disabled =
+        !recordingActive &&
+        (!wsOpen || (!isStreaming && !isStalled) || getWebrtcMode() !== "off");
+    }
+    if (recordMode) {
+      recordMode.disabled = recordingActive;
+    }
+    if (recordFps) {
+      recordFps.disabled = recordingActive;
+    }
+    if (rdRecordingSettingsBtn) {
+      rdRecordingSettingsBtn.disabled = recordingActive;
+    }
+  }
+
+  function isRecording() {
+    return !!serverRecording && ["starting", "recording", "stopping"].includes(serverRecording.status);
+  }
+
+  function formatRecordingDuration(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function numericRecordingValue(value, fallback = 0) {
+    if (typeof value === "bigint") return Number(value);
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  function normalizeRecordingSummary(recording) {
+    if (!recording) return null;
+    const normalized = { ...recording };
+    normalized.startedAt = numericRecordingValue(recording.startedAt, Date.now());
+    if (recording.stoppedAt != null) normalized.stoppedAt = numericRecordingValue(recording.stoppedAt);
+    for (const key of ["sourceFps", "targetFps", "segmentSeconds", "framesWritten", "framesDropped", "framesSkipped", "bytesWritten"]) {
+      if (recording[key] != null) normalized[key] = numericRecordingValue(recording[key]);
+    }
+    if (Array.isArray(recording.files)) {
+      normalized.files = recording.files.map((file) => ({
+        ...file,
+        size: numericRecordingValue(file?.size),
+      }));
+    }
+    return normalized;
+  }
+
+  function selectedRecordingFps() {
+    const fps = Number(recordFps?.value || 0);
+    return Number.isFinite(fps) && fps > 0
+      ? Math.max(1, Math.min(120, Math.floor(fps)))
+      : 0;
+  }
+
+  function setRecordingUi(active) {
+    if (!recordBtn) return;
+    if (active) {
+      recordBtn.classList.add("recording");
+      recordBtn.title = "Stop recording";
+      const startedAt = numericRecordingValue(serverRecording?.startedAt, Date.now());
+      const elapsed = Date.now() - startedAt;
+      const label = serverRecording?.status === "stopping"
+        ? "Stopping"
+        : formatRecordingDuration(elapsed);
+      recordBtn.innerHTML = `<i class="fa-solid fa-stop"></i><span>${label}</span>`;
+    } else {
+      recordBtn.classList.remove("recording");
+      recordBtn.title = "Record on the server using Canvas transport";
+      recordBtn.innerHTML = '<i class="fa-solid fa-circle-dot"></i><span>Record</span>';
+    }
+  }
+
+  function clearRecordingTimer() {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
+  }
+
+  function ensureRecordingTimer() {
+    if (recordingTimer || !isRecording()) return;
+    recordingTimer = setInterval(() => setRecordingUi(true), 1000);
+  }
+
+  function downloadRecordingFile(file) {
+    if (!file?.downloadUrl) return false;
+    console.debug("rd: recording download", {
+      name: file.name || "",
+      size: file.size || 0,
+      url: file.downloadUrl,
+    });
+    const link = document.createElement("a");
+    link.href = file.downloadUrl;
+    link.download = file.name || "remote-desktop-recording.mp4";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return true;
+  }
+
+  function renderRecordingDownloads(recording) {
+    if (!recording || !Array.isArray(recording.files) || recording.files.length === 0) return false;
+    const mp4Files = recording.files.filter((file) => String(file?.name || "").toLowerCase().endsWith(".mp4"));
+    const files = mp4Files.length ? mp4Files : recording.files;
+    const latest = files[files.length - 1];
+    if (!latest?.downloadUrl) return false;
+    const message = recording.files.length === 1
+      ? "Recording saved on the server."
+      : `Recording saved on the server in ${recording.files.length} segments.`;
+    console.info(message, recording.files);
+    return downloadRecordingFile(latest);
+  }
+
+  function handleRecordingStatus(msg) {
+    if (msg?.error) {
+      alert(msg.error);
+    }
+    const previousId = serverRecording?.id || "";
+    const previousActive = isRecording();
+    serverRecording = normalizeRecordingSummary(msg?.recording);
+    console.debug("rd: recording status", {
+      status: serverRecording?.status || "none",
+      id: serverRecording?.id || "",
+      framesWritten: serverRecording?.framesWritten,
+      framesSkipped: serverRecording?.framesSkipped,
+      framesDropped: serverRecording?.framesDropped,
+      files: Array.isArray(serverRecording?.files) ? serverRecording.files.length : 0,
+      pendingDownloadId: pendingRecordingDownloadId,
+    });
+    const active = isRecording();
+    if (active) {
+      ensureRecordingTimer();
+      setRecordingUi(true);
+    } else {
+      clearRecordingTimer();
+      setRecordingUi(false);
+    }
+    updateControls();
+
+    const completed =
+      previousActive &&
+      serverRecording &&
+      serverRecording.id === previousId &&
+      (serverRecording.status === "stopped" || serverRecording.status === "failed");
+    const shouldDownload =
+      serverRecording?.status === "stopped" &&
+      pendingRecordingDownloadId &&
+      (pendingRecordingDownloadId === "__pending__" || serverRecording.id === pendingRecordingDownloadId);
+    if (completed || shouldDownload) {
+      if (serverRecording.status === "failed") {
+        alert(`Server recording failed: ${serverRecording.error || "Unknown error"}`);
+        pendingRecordingDownloadId = "";
+      } else if (shouldDownload) {
+        if (renderRecordingDownloads(serverRecording)) {
+          pendingRecordingDownloadId = "";
+        } else if (serverRecording.status === "stopped") {
+          alert("Server recording stopped, but no downloadable MP4 was produced.");
+          pendingRecordingDownloadId = "";
+        }
+      }
+    }
+  }
+
+  function startRecording() {
+    if (isRecording()) return;
+    if (getWebrtcMode() !== "off") {
+      alert("Server-side recording uses the Canvas transport. Switch Transport to Canvas before recording.");
+      return;
+    }
+    if (streamState !== "streaming" && streamState !== "stalled") {
+      alert("Start the remote desktop stream before recording.");
+      return;
+    }
+    serverRecording = {
+      id: "",
+      status: "starting",
+      startedAt: Date.now(),
+      files: [],
+    };
+    setRecordingUi(true);
+    ensureRecordingTimer();
+    updateControls();
+    const requestedFps = selectedRecordingFps();
+    const command = {
+      compact: recordMode?.value === "compact",
+    };
+    if (requestedFps > 0) command.fps = requestedFps;
+    console.debug("rd: recording start", {
+      streamState,
+      transport: getWebrtcMode(),
+      requestedFps: requestedFps || "source",
+      mode: recordMode?.value || "normal",
+    });
+    sendCmd("desktop_record_start", command);
+  }
+
+  function stopRecording() {
+    if (!isRecording()) return;
+    pendingRecordingDownloadId = serverRecording?.id || "__pending__";
+    serverRecording = { ...serverRecording, status: "stopping" };
+    setRecordingUi(true);
+    updateControls();
+    console.debug("rd: recording stop", {
+      id: pendingRecordingDownloadId,
+      framesWritten: serverRecording?.framesWritten,
+      framesSkipped: serverRecording?.framesSkipped,
+      framesDropped: serverRecording?.framesDropped,
+    });
+    sendCmd("desktop_record_stop", {});
   }
 
   function startClipboardSync() {
@@ -879,6 +1100,12 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     });
   });
 
+  if (webrtcMode) {
+    webrtcMode.addEventListener("change", function () {
+      updateControls();
+    });
+  }
+
   function needsWebrtcFirewallWarning(mode) {
     if (firewallWarningAcked) return false;
     if (mode !== "relayed" && mode !== "p2p") return false;
@@ -919,12 +1146,19 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     }
   });
   stopBtn.addEventListener("click", function () {
+    if (isRecording()) stopRecording();
     desiredStreaming = false;
     setStreamState("stopping", "Stopping stream");
     sendCmd("desktop_stop", {});
     disconnectAudio();
     stopAllWebrtc();
   });
+  if (recordBtn) {
+    recordBtn.addEventListener("click", function () {
+      if (isRecording()) stopRecording();
+      else startRecording();
+    });
+  }
   fullscreenBtn.addEventListener("click", function () {
     if (canvasContainer.requestFullscreen) {
       canvasContainer.requestFullscreen();
@@ -1429,6 +1663,10 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
         updateLatency(Number(msg.ms) || 0);
         return;
       }
+      if (msg && msg.type === "recording_status") {
+        handleRecordingStatus(msg);
+        return;
+      }
       if (msg && msg.type === "clipboard_content") {
         if (clipboardSyncCtrl && clipboardSyncCtrl.checked && streamState === "streaming" && msg.text) {
           lastClipboardText = msg.text;
@@ -1448,6 +1686,10 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
       updateLatency(Number(msg.ms) || 0);
       return;
     }
+    if (msg && msg.type === "recording_status") {
+      handleRecordingStatus(msg);
+      return;
+    }
     if (msg && msg.type === "clipboard_content") {
       if (clipboardSyncCtrl && clipboardSyncCtrl.checked && streamState === "streaming" && msg.text) {
         lastClipboardText = msg.text;
@@ -1465,6 +1707,7 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     pushCaptureToggles();
     clearOfflineTimer();
     setStreamState("idle", "Stopped");
+    sendCmd("desktop_record_status", {});
     fetchClientInfo().then(() => {
       if (displaySelect && displaySelect.value) {
         console.debug("rd: initial select display", displaySelect.value);
@@ -1480,6 +1723,9 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
     disconnectAudio();
     destroyVideoDecoder();
     stopAllWebrtc();
+    clearRecordingTimer();
+    serverRecording = null;
+    setRecordingUi(false);
     setStreamState("disconnected", "Disconnected");
   });
 
@@ -1606,6 +1852,7 @@ import { createKeyboardCapture } from "./keyboard-capture.js";
   });
 
   function stopOnExit() {
+    if (isRecording()) stopRecording();
     if (ws.readyState === WebSocket.OPEN && desiredStreaming) {
       desiredStreaming = false;
       sendCmd("desktop_stop", {});

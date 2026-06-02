@@ -12,6 +12,17 @@ import (
 	"text/template"
 )
 
+var currentUserHomeDir = func() (string, error) {
+	usr, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	if usr.HomeDir == "" {
+		return "", fmt.Errorf("current user home directory is empty")
+	}
+	return usr.HomeDir, nil
+}
+
 const systemdService = `[Unit]
 Description=Overlord Agent
 After=network.target
@@ -43,27 +54,27 @@ func binaryName() string {
 }
 
 func getSystemdPath() (string, error) {
-	usr, err := user.Current()
+	homeDir, err := currentUserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(usr.HomeDir, ".config", "systemd", "user", binaryName()+".service"), nil
+	return filepath.Join(homeDir, ".config", "systemd", "user", binaryName()+".service"), nil
 }
 
 func getAutostartPath() (string, error) {
-	usr, err := user.Current()
+	homeDir, err := currentUserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(usr.HomeDir, ".config", "autostart", binaryName()+".desktop"), nil
+	return filepath.Join(homeDir, ".config", "autostart", binaryName()+".desktop"), nil
 }
 
 func getTargetPath() (string, error) {
-	usr, err := user.Current()
+	homeDir, err := currentUserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(usr.HomeDir, ".local", "share", "overlord", binaryName()), nil
+	return filepath.Join(homeDir, ".local", "share", "overlord", binaryName()), nil
 }
 
 func install(exePath string) error {
@@ -119,11 +130,11 @@ func replaceExecutable(exePath, targetPath string) error {
 
 	if err := os.Rename(tmpPath, targetPath); err != nil {
 		if removeErr := os.Remove(targetPath); removeErr == nil {
-			if err = os.Rename(tmpPath, targetPath); err == nil {
-				return nil
-			}
+			err = os.Rename(tmpPath, targetPath)
 		}
-		return fmt.Errorf("failed to replace executable at %s: %w", targetPath, err)
+		if err != nil {
+			return fmt.Errorf("failed to replace executable at %s: %w", targetPath, err)
+		}
 	}
 
 	if err := os.Chmod(targetPath, 0755); err != nil {

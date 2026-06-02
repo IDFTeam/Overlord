@@ -21,6 +21,8 @@ func h264AvailabilityDetail() string {
 
 func resetH264Encoder() {}
 
+func RequestDesktopH264Keyframe() {}
+
 func resetH264EncoderHVNC() {}
 
 func encodeH264FrameHVNC(_ *image.RGBA) ([]byte, error) {

@@ -126,6 +126,7 @@ WORKDIR /app
 
 # openssl/ca-certificates: TLS cert generation + HTTPS validation.
 # wget/tar/unzip/xz-utils: required by toolchain-manager for on-demand downloads.
+# ffmpeg: server-side remote desktop recording encoder.
 # clang: fallback C compiler for darwin/CGO agent builds (no toolchain mapping in
 # toolchain-manager.ts, so build-process.ts falls back to the default `cc`).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -138,6 +139,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         unzip \
         xz-utils \
         git \
+        ffmpeg \
         clang \
     && rm -rf /var/lib/apt/lists/*
 

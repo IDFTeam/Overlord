@@ -1,3 +1,16 @@
+(() => {
+const DEFAULT_RPC_ENDPOINTS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://solana-mainnet.gateway.tatum.io",
+  "https://solana-rpc.publicnode.com",
+  "https://api.blockeden.xyz/solana/KeCh6p22EX5AeRHxMSmc",
+  "https://solana.drpc.org",
+  "https://solana.leorpc.com/?api_key=FREE",
+  "https://solana.api.onfinality.io/public",
+  "https://solana.api.pocket.network/",
+  "https://api.devnet.solana.com",
+];
+
 const rpcSelect = document.getElementById("rpc-url");
 const customRpcWrapper = document.getElementById("custom-rpc-wrapper");
 const customRpcInput = document.getElementById("custom-rpc-url");
@@ -10,28 +23,47 @@ const outputSection = document.getElementById("output-section");
 const outputDiv = document.getElementById("output");
 const walletInfo = document.getElementById("wallet-info");
 const walletAddress = document.getElementById("wallet-address");
-const walletBalance = document.getElementById("wallet-balance");
+
+if (!rpcSelect || !customRpcWrapper || !customRpcInput || !privateKeyInput || !toggleKeyBtn || !serverUrlInput || !previewBtn || !publishBtn || !outputSection || !outputDiv || !walletInfo || !walletAddress) {
+  return;
+}
+
+function normalizeRpcEndpoints(value) {
+  const seen = new Set();
+  const endpoints = [];
+  for (const raw of Array.isArray(value) ? value : []) {
+    const endpoint = String(raw || "").trim();
+    if (!/^https?:\/\//i.test(endpoint) || seen.has(endpoint)) continue;
+    seen.add(endpoint);
+    endpoints.push(endpoint);
+  }
+  return endpoints;
+}
+
+function appendRpcOption(value, label = value) {
+  const opt = document.createElement("option");
+  opt.value = value;
+  opt.textContent = label;
+  rpcSelect.appendChild(opt);
+}
 
 async function loadRpcEndpoints() {
+  rpcSelect.innerHTML = "";
+  let endpoints = [];
   try {
     const res = await fetch("/api/sol/rpc-endpoints", { credentials: "include" });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data.endpoints)) {
-        data.endpoints.forEach((ep) => {
-          const opt = document.createElement("option");
-          opt.value = ep;
-          opt.textContent = ep;
-          rpcSelect.appendChild(opt);
-        });
-      }
+      endpoints = normalizeRpcEndpoints(data?.endpoints);
     }
   } catch {}
 
-  const customOpt = document.createElement("option");
-  customOpt.value = "__custom__";
-  customOpt.textContent = "Custom RPC endpoint...";
-  rpcSelect.appendChild(customOpt);
+  if (endpoints.length === 0) {
+    endpoints = DEFAULT_RPC_ENDPOINTS;
+  }
+
+  normalizeRpcEndpoints(endpoints).forEach((ep) => appendRpcOption(ep));
+  appendRpcOption("__custom__", "Custom RPC endpoint...");
 }
 
 loadRpcEndpoints();
@@ -192,3 +224,4 @@ publishBtn.addEventListener("click", async () => {
     publishBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Publish to Solana';
   }
 });
+})();

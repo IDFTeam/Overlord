@@ -1,3 +1,4 @@
+(() => {
 let toastContainer = null;
 let toastId = 0;
 
@@ -84,3 +85,4 @@ function closeToast(id) {
 
 window.showToast = showToast;
 window.closeToast = closeToast;
+})();

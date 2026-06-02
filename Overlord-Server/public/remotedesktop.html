@@ -30,6 +30,58 @@
             <button id="stopBtn" class="button ghost">
               <i class="fa-solid fa-stop"></i><span>Stop</span>
             </button>
+            <button id="recordBtn" class="button ghost" disabled title="Record on the server using Canvas transport">
+              <i class="fa-solid fa-circle-dot"></i><span>Record</span>
+            </button>
+            <div class="relative" id="rdRecordingSettingsWrap">
+              <button
+                id="rdRecordingSettingsBtn"
+                type="button"
+                class="button ghost"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <i class="fa-solid fa-sliders"></i><span>Recording Settings</span>
+                <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 ml-1"></i>
+              </button>
+
+              <div
+                id="rdRecordingSettingsMenu"
+                class="hidden absolute left-0 top-full mt-2 w-[280px] rounded-xl border border-slate-700 bg-slate-900/95 backdrop-blur-md shadow-2xl shadow-black/50 z-50"
+                role="menu"
+              >
+                <div class="px-4 py-3">
+                  <div class="text-xs uppercase tracking-wide text-slate-500 mb-2">Recording</div>
+                  <div class="flex items-center gap-2 mb-2">
+                    <label class="text-sm text-slate-300 w-16" for="recordMode">Mode</label>
+                    <select
+                      id="recordMode"
+                      class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                      title="Recording size mode"
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="compact">Compact</option>
+                    </select>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <label class="text-sm text-slate-300 w-16" for="recordFps">FPS</label>
+                    <select
+                      id="recordFps"
+                      class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-100"
+                      title="Recording frame rate"
+                    >
+                      <option value="">Source FPS</option>
+                      <option value="3">3 fps</option>
+                      <option value="5">5 fps</option>
+                      <option value="10">10 fps</option>
+                      <option value="15">15 fps</option>
+                      <option value="30">30 fps</option>
+                      <option value="60">60 fps</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
             <button id="fullscreenBtn" class="button ghost">
               <i class="fa-solid fa-expand"></i><span>Fullscreen</span>
             </button>
@@ -234,6 +286,11 @@
           #canvasContainer[data-stream-state="stalled"] {
             border-color: rgba(251, 146, 60, 0.7);
             box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.45);
+          }
+          #recordBtn.recording {
+            background: rgba(190, 18, 60, 0.9);
+            border-color: rgba(244, 63, 94, 0.85);
+            color: #fff;
           }
           #canvasContainer:fullscreen {
             display: flex;

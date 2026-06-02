@@ -22,6 +22,7 @@ import { getMaxPayloadLimit, getMessageByteLength, isAllowedClientMessageType } 
 import { stopAllProxiesForClient } from "../socks5-proxy-manager";
 import { verifyBuildToken, isBuildBanned } from "../build-signing";
 import { clearThumbnail } from "../../thumbnails";
+import { stopRemoteDesktopRecording } from "../rd-recording";
 
 const OFFLINE_GRACE_MS = (() => {
   const raw = process.env.OVERLORD_OFFLINE_GRACE_MS;
@@ -991,6 +992,7 @@ export function handleWebSocketClose(
   deps.rdStreamingState.delete(clientId);
   deps.hvncStreamingState.delete(clientId);
   deps.webcamStreamingState.delete(clientId);
+  stopRemoteDesktopRecording(clientId, "client disconnected");
   logger.info(`[close] ${clientId} code=${code} reason=${reason} disconnect_reason=${storedDisconnectReason || "unknown"}`);
 
   if (role === "client" && currentClient) {

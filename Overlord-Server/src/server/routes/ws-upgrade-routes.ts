@@ -60,6 +60,7 @@ function checkOperatorAccess(
 
 type AuthenticatedUser = {
   userId: number;
+  username: string;
   role: UserRole;
 };
 
@@ -187,6 +188,7 @@ async function tryClientViewerUpgrade(
       ip: getRequestIp(req, server),
       userRole: user.role,
       userId: user.userId,
+      username: user.username,
     };
     if (route.sessionId) {
       data.sessionId = route.sessionId();
@@ -219,6 +221,7 @@ async function tryGlobalViewerUpgrade(
     ip: getRequestIp(req, server),
     userRole: user.role,
     userId: user.userId,
+    username: user.username,
   });
 }
 

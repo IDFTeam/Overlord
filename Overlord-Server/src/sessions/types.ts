@@ -23,6 +23,7 @@ export type SocketData = {
   ip?: string;
   userRole?: string;
   userId?: number;
+  username?: string;
   wasKnown?: boolean;
   autoTasksRan?: boolean;
   autoDeploysRan?: boolean;

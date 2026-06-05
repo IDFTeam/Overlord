@@ -3,11 +3,12 @@
 package sysinfo
 
 /*
-#cgo LDFLAGS: -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation
+#cgo LDFLAGS: -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
+#include <IOKit/hidsystem/IOHIDLib.h>
 #include <stdbool.h>
 
 extern bool CGPreflightScreenCaptureAccess(void) __attribute__((weak_import));
@@ -20,6 +21,10 @@ static int checkAccessibilityPermission(void) {
 static int checkScreenRecordingPermission(void) {
 	if (CGPreflightScreenCaptureAccess == NULL) return 0;
 	return CGPreflightScreenCaptureAccess() ? 1 : 0;
+}
+
+static int checkInputMonitoringPermission(void) {
+	return IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted ? 1 : 0;
 }
 
 static int requestAccessibilityPermission(void) {
@@ -42,6 +47,10 @@ static int requestScreenRecordingPermission(void) {
 	if (CGRequestScreenCaptureAccess == NULL) return checkScreenRecordingPermission();
 	return CGRequestScreenCaptureAccess() ? 1 : 0;
 }
+
+static int requestInputMonitoringPermission(void) {
+	return IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted ? 1 : 0;
+}
 */
 import "C"
 
@@ -53,10 +62,18 @@ func darwinScreenRecordingPermission() bool {
 	return C.checkScreenRecordingPermission() == 1
 }
 
+func darwinInputMonitoringPermission() bool {
+	return C.checkInputMonitoringPermission() == 1
+}
+
 func darwinRequestAccessibilityPermission() bool {
 	return C.requestAccessibilityPermission() == 1
 }
 
 func darwinRequestScreenRecordingPermission() bool {
 	return C.requestScreenRecordingPermission() == 1
+}
+
+func darwinRequestInputMonitoringPermission() bool {
+	return C.requestInputMonitoringPermission() == 1
 }

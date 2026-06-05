@@ -2613,6 +2613,44 @@ tbody tr:hover {
 .cv-perm-chip:hover { filter: brightness(1.08); }
 .cv-perm-chip.is-ok { background: rgba(16, 185, 129, 0.1); color: #86efac; border-color: rgba(16, 185, 129, 0.25); }
 .cv-perm-chip.is-missing { background: rgba(244, 63, 94, 0.1); color: #fda4af; border-color: rgba(244, 63, 94, 0.25); }
+.cv-perm-freshness {
+  font-size: 10px;
+  color: var(--cv-text-dim);
+  white-space: nowrap;
+}
+.cv-perm-readiness,
+.cv-perm-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cv-perm-readiness {
+  width: 100%;
+}
+.cv-ready-chip,
+.cv-perm-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cv-ready-chip.is-ok { background: rgba(16, 185, 129, 0.08); color: #86efac; border-color: rgba(16, 185, 129, 0.2); }
+.cv-ready-chip.is-warn { background: rgba(245, 158, 11, 0.1); color: #fcd34d; border-color: rgba(245, 158, 11, 0.24); }
+.cv-perm-tool {
+  cursor: pointer;
+  font: inherit;
+  appearance: none;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--cv-text);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+.cv-perm-tool:hover { background: rgba(148, 163, 184, 0.14); }
 
 .cv-group {
   display: inline-flex;

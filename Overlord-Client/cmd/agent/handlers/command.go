@@ -2281,6 +2281,7 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 	case "darwin_request_permissions":
 		payload, _ := envelope["payload"].(map[string]interface{})
 		var requested []string
+		refreshOnly, _ := payload["refreshOnly"].(bool)
 		if raw, ok := payload["permissions"].([]interface{}); ok {
 			for _, item := range raw {
 				if key, ok := item.(string); ok && key != "" {
@@ -2288,9 +2289,16 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 				}
 			}
 		}
-		perms := sysinfo.RequestDarwinPermissions(requested)
+		perms := sysinfo.DarwinPermissionsRefresh()
+		if !refreshOnly {
+			perms = sysinfo.RequestDarwinPermissions(requested)
+		}
 		missing := make([]string, 0)
-		for _, key := range []string{"accessibility", "screenRecording", "fullDiskAccess"} {
+		keys := []string{"accessibility", "screenRecording", "fullDiskAccess"}
+		if !refreshOnly {
+			keys = append(keys, "inputMonitoring")
+		}
+		for _, key := range keys {
 			if perms == nil || !perms[key] {
 				missing = append(missing, key)
 			}

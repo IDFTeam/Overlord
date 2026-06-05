@@ -184,12 +184,13 @@ function macPermissionLabels(keys = []) {
   const labels = {
     accessibility: "Accessibility",
     screenRecording: "Screen Recording",
+    inputMonitoring: "Input Monitoring",
     fullDiskAccess: "Full Disk Access",
   };
   return keys.map((key) => labels[key] || key).join(", ");
 }
 
-async function requestMacPermissions(clientId, permissionKey = "") {
+async function requestMacPermissions(clientId, permissionKey = "", { refreshOnly = false } = {}) {
   if (!clientId) return;
   if (!isClientOnline(clientId)) {
     alert("Client is offline. macOS permissions can only be requested while the client is online.");
@@ -200,14 +201,20 @@ async function requestMacPermissions(clientId, permissionKey = "") {
     return;
   }
 
-  const requested = permissionKey ? [permissionKey] : ["accessibility", "screenRecording", "fullDiskAccess"];
+  const requested = permissionKey
+    ? [permissionKey]
+    : refreshOnly
+      ? ["accessibility", "screenRecording", "fullDiskAccess"]
+      : ["accessibility", "screenRecording", "inputMonitoring", "fullDiskAccess"];
   const label = macPermissionLabels(requested) || "macOS permissions";
-  const proceed = confirm(
-    `Request ${label} from ${clientId}?\n\n` +
-    "This can show a macOS prompt on the target Mac. " +
-    "Full Disk Access must be granted in System Settings; the agent will open the Privacy pane when possible.",
-  );
-  if (!proceed) return;
+  if (!refreshOnly) {
+    const proceed = confirm(
+      `Request ${label} from ${clientId}?\n\n` +
+      "This can show a macOS prompt on the target Mac. " +
+      "Full Disk Access must be granted in System Settings; the agent will open the Privacy pane when possible.",
+    );
+    if (!proceed) return;
+  }
 
   try {
     const res = await fetch(`/api/clients/${encodeURIComponent(clientId)}/command`, {
@@ -216,6 +223,7 @@ async function requestMacPermissions(clientId, permissionKey = "") {
       body: JSON.stringify({
         action: "darwin_request_permissions",
         permissions: requested,
+        refreshOnly,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -225,7 +233,9 @@ async function requestMacPermissions(clientId, permissionKey = "") {
     }
     const missing = Array.isArray(data.missing) ? data.missing : [];
     const stillMissingRequested = missing.filter((key) => requested.includes(key));
-    if (stillMissingRequested.length) {
+    if (refreshOnly) {
+      window.showToast?.("macOS permissions refreshed", "success", 2500);
+    } else if (stillMissingRequested.length) {
       alert(`Permission request completed, but still missing: ${macPermissionLabels(stillMissingRequested)}`);
     } else {
       alert(`${label} is granted.`);
@@ -233,6 +243,25 @@ async function requestMacPermissions(clientId, permissionKey = "") {
     setTimeout(() => loadWithOptions({ force: true }), 300);
   } catch (err) {
     alert("macOS permission request failed: " + err.message);
+  }
+}
+
+async function applyMacPermissionChanges(clientId) {
+  if (!clientId) return;
+  if (!isClientOnline(clientId)) {
+    alert("Client is offline.");
+    return;
+  }
+  const proceed = confirm(
+    `Reconnect ${clientId} to apply macOS permission changes?\n\n` +
+    "The client will reconnect and report fresh permission state.",
+  );
+  if (!proceed) return;
+  markManualDisconnect(clientId);
+  const ok = await sendCommand(clientId, "reconnect");
+  if (ok) {
+    window.showToast?.("Reconnect requested", "success", 2500);
+    setTimeout(() => loadWithOptions({ force: true }), 1200);
   }
 }
 
@@ -910,6 +939,8 @@ function initializeRenderer() {
     requestThumbnail,
     pingClient: (id) => sendCommand(id, "ping"),
     onMacPermissionRequest: (id, _card, permissionKey) => requestMacPermissions(id, permissionKey),
+    onMacPermissionRefresh: (id) => requestMacPermissions(id, "", { refreshOnly: true }),
+    onMacPermissionApply: (id) => applyMacPermissionChanges(id),
     userRole: currentUser?.role,
     getServerVersion: () => currentServerVersion,
     getDisplayFields: () => displayFields,

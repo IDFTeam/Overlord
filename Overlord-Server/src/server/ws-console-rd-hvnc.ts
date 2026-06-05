@@ -327,7 +327,8 @@ export function handleRemoteDesktopViewerMessage(ws: ServerWebSocket<SocketData>
   switch (payload.type) {
     case "desktop_start":
       if (!state.isStreaming) {
-        if (target.os === "darwin" && target.permissions) {
+        const targetOs = String(target.os || "").toLowerCase();
+        if ((targetOs.includes("darwin") || targetOs.includes("mac")) && target.permissions) {
           const missing: string[] = [];
           if (!target.permissions.screenRecording) missing.push("screenRecording");
           if (!target.permissions.accessibility) missing.push("accessibility");

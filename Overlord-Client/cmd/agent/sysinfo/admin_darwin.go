@@ -25,6 +25,16 @@ func DarwinPermissions() map[string]bool {
 	return map[string]bool{
 		"screenRecording": darwinScreenRecordingPermission(),
 		"accessibility":   darwinAccessibilityPermission(),
+		"inputMonitoring": darwinInputMonitoringPermission(),
+		"fullDiskAccess":  darwinFullDiskAccessPermission(),
+		"root":            os.Getuid() == 0,
+	}
+}
+
+func DarwinPermissionsRefresh() map[string]bool {
+	return map[string]bool{
+		"screenRecording": darwinScreenRecordingPermission(),
+		"accessibility":   darwinAccessibilityPermission(),
 		"fullDiskAccess":  darwinFullDiskAccessPermission(),
 		"root":            os.Getuid() == 0,
 	}
@@ -38,6 +48,7 @@ func RequestDarwinPermissions(requested []string) map[string]bool {
 	if len(want) == 0 {
 		want["accessibility"] = true
 		want["screenRecording"] = true
+		want["inputMonitoring"] = true
 		want["fullDiskAccess"] = true
 	}
 
@@ -46,6 +57,10 @@ func RequestDarwinPermissions(requested []string) map[string]bool {
 	}
 	if want["screenRecording"] {
 		darwinRequestScreenRecordingPermission()
+	}
+	if want["inputMonitoring"] {
+		darwinRequestInputMonitoringPermission()
+		_ = exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent").Start()
 	}
 	if want["fullDiskAccess"] {
 		_ = exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").Start()

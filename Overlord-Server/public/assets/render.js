@@ -232,12 +232,14 @@ function macPermissionBadgeHtml(client) {
 function macPermissionDetailHtml(client) {
   const state = macPermissionState(client);
   if (!state) return "";
+  const ok = state.missing.length === 0;
+  const summary = ok ? "All required permissions granted" : `Missing: ${state.missing.map((item) => item.label).join(", ")}`;
   const chips = state.items.map((item) => `
-    <span class="cv-perm-chip ${item.granted ? "is-ok" : "is-missing"}">
+    <button type="button" class="cv-perm-chip ${item.granted ? "is-ok" : "is-missing"}" data-mac-permission-key="${escapeHtml(item.key)}" title="Request ${escapeHtml(item.label)} permission">
       <i class="fa-solid ${item.granted ? "fa-check" : "fa-xmark"}"></i>${escapeHtml(item.label)}
-    </span>
+    </button>
   `).join("");
-  return `<div class="cv-field cv-field-wide"><span class="cv-field-label">macOS Permissions</span><span class="cv-field-value cv-perm-list">${chips}</span></div>`;
+  return `<div class="cv-field cv-field-wide cv-field-macperms"><span class="cv-field-label">macOS Permissions</span><span class="cv-field-value cv-perm-list"><span class="cv-perm-summary ${ok ? "is-ok" : "is-warn"}">${escapeHtml(summary)}</span>${chips}</span></div>`;
 }
 
 function shortOsLabel(osRaw = "") {
@@ -259,6 +261,17 @@ function shortOsLabel(osRaw = "") {
   return osRaw || "?";
 }
 
+function normalizeVersion(version) {
+  return String(version || "").trim().replace(/^v/i, "");
+}
+
+function isClientVersionCurrent(clientVersion, serverVersion) {
+  const client = normalizeVersion(clientVersion);
+  const server = normalizeVersion(serverVersion);
+  if (!client || !server || server === "unknown" || server === "unavailable") return true;
+  return client === server;
+}
+
 export function createRenderer({
   grid,
   totalPill,
@@ -268,7 +281,9 @@ export function createRenderer({
   requestPreview,
   requestThumbnail,
   pingClient,
+  onMacPermissionRequest,
   userRole,
+  getServerVersion,
   getDisplayFields,
 }) {
   const isViewer = userRole === "viewer";
@@ -364,6 +379,14 @@ export function createRenderer({
       if (bookmarkBtn) {
         e.stopPropagation();
         handleBookmarkClick(card, bookmarkBtn);
+        return;
+      }
+
+      const macPermBtn = e.target.closest(".cv-perm-chip[data-mac-permission-key]");
+      if (macPermBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (onMacPermissionRequest) onMacPermissionRequest(clientId, card, macPermBtn.dataset.macPermissionKey);
         return;
       }
 
@@ -803,7 +826,7 @@ export function createRenderer({
     const showBattery = showField("battery");
     const cpuHtml = client.cpu ? cpuBadgeHtml(client.cpu) : "—";
     const batteryIndicator = showBattery ? batteryHtml(client) : "";
-    const verLatest = String(client.version || "").startsWith("2.0.");
+    const verLatest = isClientVersionCurrent(client.version, typeof getServerVersion === "function" ? getServerVersion() : "");
 
     const metaParts = [
       showField("system") ? `<span class="cv-os cv-tone-${os.tone}"><i class="fa ${os.icon}"></i> ${escapeHtml(shortOsLabel(client.os))}</span>` : "",
@@ -956,7 +979,7 @@ export function createRenderer({
     const customTag = String(client.customTag || "").trim();
     const displayName = nickname || client.host || deviceId;
     const userLine = client.user || "unknown";
-    const verLatest = String(client.version || "").startsWith("2.0.");
+    const verLatest = isClientVersionCurrent(client.version, typeof getServerVersion === "function" ? getServerVersion() : "");
     const hasGroup = !!String(client.groupName || "").trim();
     const showHost = nickname && client.host && nickname !== client.host;
     const showHardware = showField("hardware");

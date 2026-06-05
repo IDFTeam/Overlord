@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { authenticateRequest } from "../../auth";
 import { AuditAction, logAudit } from "../../auditLog";
 import * as clientManager from "../../clientManager";
-import { deleteClientRow } from "../../db";
+import { deleteClientRow, upsertClientRow } from "../../db";
 import { metrics } from "../../metrics";
 import { encodeMessage } from "../../protocol";
 import { requireClientAccess, requireFeatureAccess, requirePermission } from "../../rbac";
@@ -106,6 +106,46 @@ export async function handleClientCommandRoute(
     } else if (action === "desktop_start") {
       target.ws.send(encodeMessage({ type: "command", commandType: "desktop_start", id: uuidv4() }));
       metrics.recordCommand("desktop_start");
+    } else if (action === "darwin_request_permissions") {
+      const targetOs = String(target.os || "").toLowerCase();
+      if (!targetOs.includes("darwin") && !targetOs.includes("mac")) {
+        return Response.json({ ok: false, error: "macOS permission requests are only available for macOS clients" }, { status: 400 });
+      }
+      const requested = Array.isArray(body?.permissions)
+        ? body.permissions.filter((p: unknown) => typeof p === "string").slice(0, 8)
+        : [];
+      const cmdId = uuidv4();
+      const replyPromise: Promise<{ ok: boolean; message?: string }> = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          deps.pendingCommandReplies.delete(cmdId);
+          reject(new Error("macOS permission request timed out"));
+        }, 45_000);
+        deps.pendingCommandReplies.set(cmdId, { resolve, reject, timeout, clientId: targetId });
+      });
+
+      target.ws.send(encodeMessage({ type: "command", commandType: "darwin_request_permissions", id: cmdId, payload: { permissions: requested } } as any));
+      metrics.recordCommand("darwin_request_permissions");
+      logAudit({ timestamp: Date.now(), username: user.username, ip, action: AuditAction.COMMAND, targetClientId: targetId, success: true, details: "darwin_request_permissions" });
+
+      try {
+        const result = await replyPromise;
+        let detail: any = {};
+        if (result.message) {
+          try { detail = JSON.parse(result.message); } catch { detail = {}; }
+        }
+        if (detail.permissions && typeof detail.permissions === "object" && !Array.isArray(detail.permissions)) {
+          target.permissions = detail.permissions;
+          upsertClientRow({ id: targetId, permissions: target.permissions, lastSeen: target.lastSeen, online: target.online ? 1 : 0 });
+        }
+        return Response.json({
+          ok: result.ok,
+          permissions: detail.permissions || null,
+          missing: Array.isArray(detail.missing) ? detail.missing : [],
+          message: result.message || "",
+        }, { headers: deps.CORS_HEADERS });
+      } catch (error: any) {
+        return Response.json({ ok: false, error: error.message || "macOS permission request failed" }, { status: 504 });
+      }
     } else if (action === "script_exec") {
       const scriptContent = body?.script || "";
       const scriptType = body?.scriptType || "powershell";

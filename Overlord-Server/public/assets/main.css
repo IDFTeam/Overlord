@@ -2589,6 +2589,13 @@ tbody tr:hover {
   gap: 6px;
   flex-wrap: wrap;
 }
+.cv-perm-summary {
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.cv-perm-summary.is-ok { color: #86efac; }
+.cv-perm-summary.is-warn { color: #fcd34d; }
 .cv-perm-chip {
   display: inline-flex;
   align-items: center;
@@ -2599,7 +2606,11 @@ tbody tr:hover {
   border: 1px solid transparent;
   font-size: 11px;
   white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+  appearance: none;
 }
+.cv-perm-chip:hover { filter: brightness(1.08); }
 .cv-perm-chip.is-ok { background: rgba(16, 185, 129, 0.1); color: #86efac; border-color: rgba(16, 185, 129, 0.25); }
 .cv-perm-chip.is-missing { background: rgba(244, 63, 94, 0.1); color: #fda4af; border-color: rgba(244, 63, 94, 0.25); }
 

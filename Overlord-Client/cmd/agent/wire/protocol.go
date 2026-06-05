@@ -21,7 +21,7 @@ type Hello struct {
 	GPU             string          `msgpack:"gpu,omitempty"`
 	RAM             string          `msgpack:"ram,omitempty"`
 	BatteryPercent  *int            `msgpack:"batteryPercent,omitempty"`
-	BatteryCharging bool            `msgpack:"batteryCharging,omitempty"`
+	BatteryCharging *bool           `msgpack:"batteryCharging,omitempty"`
 	IsAdmin         bool            `msgpack:"isAdmin,omitempty"`
 	Elevation       string          `msgpack:"elevation,omitempty"`
 	Permissions     map[string]bool `msgpack:"permissions,omitempty"`

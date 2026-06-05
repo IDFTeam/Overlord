@@ -647,7 +647,10 @@ func runSession(ctx context.Context, cancel context.CancelFunc, conn *websocket.
 	hello.GPU = hw.GPU
 	hello.RAM = hw.RAM
 	hello.BatteryPercent = hw.BatteryPercent
-	hello.BatteryCharging = hw.BatteryCharging
+	if hw.BatteryPercent != nil {
+		charging := hw.BatteryCharging
+		hello.BatteryCharging = &charging
+	}
 	hello.IsAdmin = sysinfo.IsAdmin()
 	hello.Elevation = sysinfo.Elevation()
 	hello.Permissions = sysinfo.DarwinPermissions()

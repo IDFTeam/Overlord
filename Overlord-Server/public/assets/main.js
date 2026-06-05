@@ -75,6 +75,7 @@ let contextCard = null;
 let availableOsList = new Set();
 let rendererInitialized = false;
 let lastKnownTotalPages = 1;
+let currentServerVersion = "";
 
 window.setDashboardPageBounds = (currentPage, totalPages) => {
   lastKnownTotalPages = Math.max(1, Number(totalPages) || 1);
@@ -114,8 +115,14 @@ async function loadServerVersion() {
     const version = typeof payload?.version === "string" && payload.version.trim()
       ? payload.version.trim()
       : "unknown";
+    currentServerVersion = version;
     setServerVersionLabel(version, version === "unknown" ? "warn" : "ok");
+    if (rendererInitialized) {
+      state.lastDigest = "";
+      renderCachedClients({ force: true });
+    }
   } catch {
+    currentServerVersion = "unavailable";
     setServerVersionLabel("unavailable", "bad");
   }
 }
@@ -171,6 +178,62 @@ function getClientCard(clientId) {
       ? CSS.escape(clientId)
       : clientId;
   return document.querySelector(`[data-client-row][data-id="${selectorId}"]`);
+}
+
+function macPermissionLabels(keys = []) {
+  const labels = {
+    accessibility: "Accessibility",
+    screenRecording: "Screen Recording",
+    fullDiskAccess: "Full Disk Access",
+  };
+  return keys.map((key) => labels[key] || key).join(", ");
+}
+
+async function requestMacPermissions(clientId, permissionKey = "") {
+  if (!clientId) return;
+  if (!isClientOnline(clientId)) {
+    alert("Client is offline. macOS permissions can only be requested while the client is online.");
+    return;
+  }
+  if (detectClientPlatform(clientId) !== "mac") {
+    alert("This permission request is only available for macOS clients.");
+    return;
+  }
+
+  const requested = permissionKey ? [permissionKey] : ["accessibility", "screenRecording", "fullDiskAccess"];
+  const label = macPermissionLabels(requested) || "macOS permissions";
+  const proceed = confirm(
+    `Request ${label} from ${clientId}?\n\n` +
+    "This can show a macOS prompt on the target Mac. " +
+    "Full Disk Access must be granted in System Settings; the agent will open the Privacy pane when possible.",
+  );
+  if (!proceed) return;
+
+  try {
+    const res = await fetch(`/api/clients/${encodeURIComponent(clientId)}/command`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "darwin_request_permissions",
+        permissions: requested,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || "macOS permission request failed.");
+      return;
+    }
+    const missing = Array.isArray(data.missing) ? data.missing : [];
+    const stillMissingRequested = missing.filter((key) => requested.includes(key));
+    if (stillMissingRequested.length) {
+      alert(`Permission request completed, but still missing: ${macPermissionLabels(stillMissingRequested)}`);
+    } else {
+      alert(`${label} is granted.`);
+    }
+    setTimeout(() => loadWithOptions({ force: true }), 300);
+  } catch (err) {
+    alert("macOS permission request failed: " + err.message);
+  }
 }
 
 window.__uninstallingClientIds = window.__uninstallingClientIds || new Set();
@@ -846,7 +909,9 @@ function initializeRenderer() {
     requestPreview,
     requestThumbnail,
     pingClient: (id) => sendCommand(id, "ping"),
+    onMacPermissionRequest: (id, _card, permissionKey) => requestMacPermissions(id, permissionKey),
     userRole: currentUser?.role,
+    getServerVersion: () => currentServerVersion,
     getDisplayFields: () => displayFields,
   });
   rendererSetLayout = rSetLayout;

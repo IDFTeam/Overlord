@@ -13,3 +13,7 @@ func Elevation() string {
 func DarwinPermissions() map[string]bool {
 	return nil
 }
+
+func RequestDarwinPermissions(_ []string) map[string]bool {
+	return nil
+}

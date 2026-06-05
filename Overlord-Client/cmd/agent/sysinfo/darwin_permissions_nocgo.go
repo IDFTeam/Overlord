@@ -9,3 +9,11 @@ func darwinAccessibilityPermission() bool {
 func darwinScreenRecordingPermission() bool {
 	return false
 }
+
+func darwinRequestAccessibilityPermission() bool {
+	return false
+}
+
+func darwinRequestScreenRecordingPermission() bool {
+	return false
+}

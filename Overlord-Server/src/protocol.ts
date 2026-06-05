@@ -119,6 +119,7 @@ export type CommandType =
   | "desktop_select_display"
   | "desktop_enable_mouse"
   | "desktop_enable_keyboard"
+  | "darwin_request_permissions"
   | "webrtc_publish"
   | "webrtc_stop"
   | "webrtc_p2p_offer"

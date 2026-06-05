@@ -57,7 +57,7 @@ func batteryStatus() (*int, bool) {
 		return nil, false
 	}
 	lower := strings.ToLower(text)
-	charging := strings.Contains(lower, "charging") || strings.Contains(lower, "charged")
+	charging := !strings.Contains(lower, "discharging") && (strings.Contains(lower, "charging") || strings.Contains(lower, "charged"))
 	return &percent, charging
 }
 

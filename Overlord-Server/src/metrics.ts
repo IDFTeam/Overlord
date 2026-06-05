@@ -59,6 +59,8 @@ export interface MetricsSnapshot {
     lastMinuteErrors: number;
     latencyAvg: number;
     latencyP95: number;
+    latencyP99: number;
+    routes: HttpRouteStats[];
   };
   eventLoop: {
     avg: number;
@@ -67,12 +69,41 @@ export interface MetricsSnapshot {
   };
 }
 
+export interface HttpRouteStats {
+  route: string;
+  countLastMinute: number;
+  errorsLastMinute: number;
+  latencyAvg: number;
+  latencyP95: number;
+  latencyP99: number;
+  latencyMax: number;
+  lastDuration: number;
+  lastStatus: number;
+}
+
 export interface MetricsHistory {
   timestamp: number;
   clientsOnline: number;
   commandsPerMinute: number;
   bandwidthSent: number;
   bandwidthReceived: number;
+  httpRequestsPerMinute?: number;
+  httpErrorsPerMinute?: number;
+  httpLatencyAvg?: number;
+  httpLatencyP95?: number;
+  httpLatencyP99?: number;
+  eventLoopAvg?: number;
+  eventLoopP95?: number;
+  heapUsed?: number;
+  rss?: number;
+  systemMemoryUsedPercent?: number;
+  activeSessions?: number;
+}
+
+interface TimedHttpSample {
+  ts: number;
+  duration: number;
+  statusCode: number;
 }
 
 class MetricsCollector {
@@ -103,8 +134,11 @@ class MetricsCollector {
   private httpTotal: number = 0;
   private httpTimestamps: number[] = [];
   private httpErrorTimestamps: number[] = [];
-  private httpLatencies: number[] = [];
-  private maxHttpLatencyHistory: number = 1000;
+  private httpSamples: TimedHttpSample[] = [];
+  private httpRouteSamples: Map<string, TimedHttpSample[]> = new Map();
+  private maxHttpLatencyHistory: number = 2000;
+  private maxHttpRouteSamples: number = 300;
+  private ignoredHttpMetricRoutes: Set<string> = new Set(["GET /api/metrics"]);
 
   private eventLoopDelays: number[] = [];
   private maxEventLoopHistory: number = 300;
@@ -236,7 +270,74 @@ class MetricsCollector {
     }, intervalMs);
   }
 
-  recordHttpRequest(durationMs: number, statusCode: number) {
+  private percentile(samples: number[], percentile: number): number {
+    if (samples.length === 0) return 0;
+    const index = Math.max(0, Math.ceil(samples.length * percentile) - 1);
+    return samples[index] ?? 0;
+  }
+
+  private average(samples: number[]): number {
+    return samples.length
+      ? samples.reduce((sum, value) => sum + value, 0) / samples.length
+      : 0;
+  }
+
+  private pruneHttpSamples(list: TimedHttpSample[], minTs: number): void {
+    let removeCount = 0;
+    while (removeCount < list.length && list[removeCount].ts <= minTs) {
+      removeCount += 1;
+    }
+    if (removeCount > 0) {
+      list.splice(0, removeCount);
+    }
+  }
+
+  private countHttpErrors(samples: TimedHttpSample[]): number {
+    let count = 0;
+    for (const sample of samples) {
+      if (sample.statusCode >= 400) count += 1;
+    }
+    return count;
+  }
+
+  private getTopHttpRoutes(minTs: number): HttpRouteStats[] {
+    const routes: HttpRouteStats[] = [];
+    for (const [route, samples] of this.httpRouteSamples.entries()) {
+      this.pruneHttpSamples(samples, minTs);
+      if (samples.length === 0) {
+        this.httpRouteSamples.delete(route);
+        continue;
+      }
+
+      const durations = samples
+        .map((sample) => sample.duration)
+        .sort((a, b) => a - b);
+      const last = samples[samples.length - 1];
+      routes.push({
+        route,
+        countLastMinute: samples.length,
+        errorsLastMinute: this.countHttpErrors(samples),
+        latencyAvg: this.average(durations),
+        latencyP95: this.percentile(durations, 0.95),
+        latencyP99: this.percentile(durations, 0.99),
+        latencyMax: durations[durations.length - 1] ?? 0,
+        lastDuration: last?.duration ?? 0,
+        lastStatus: last?.statusCode ?? 0,
+      });
+    }
+
+    return routes
+      .sort((a, b) => {
+        if (b.latencyP95 !== a.latencyP95) return b.latencyP95 - a.latencyP95;
+        if (b.latencyAvg !== a.latencyAvg) return b.latencyAvg - a.latencyAvg;
+        return b.countLastMinute - a.countLastMinute;
+      })
+      .slice(0, 8);
+  }
+
+  recordHttpRequest(durationMs: number, statusCode: number, route = "unknown") {
+    if (this.ignoredHttpMetricRoutes.has(route)) return;
+
     this.httpTotal++;
     const now = Date.now();
     this.httpTimestamps.push(now);
@@ -246,14 +347,25 @@ class MetricsCollector {
       this.pruneTimestampWindow(this.httpErrorTimestamps, now - 60000);
     }
     if (Number.isFinite(durationMs)) {
-      this.httpLatencies.push(durationMs);
-      if (this.httpLatencies.length > this.maxHttpLatencyHistory) {
-        this.httpLatencies.shift();
+      const sample = { ts: now, duration: Math.max(0, durationMs), statusCode };
+      this.httpSamples.push(sample);
+      if (this.httpSamples.length > this.maxHttpLatencyHistory) {
+        this.httpSamples.splice(0, this.httpSamples.length - this.maxHttpLatencyHistory);
       }
+
+      const routeSamples = this.httpRouteSamples.get(route) || [];
+      routeSamples.push(sample);
+      if (routeSamples.length > this.maxHttpRouteSamples) {
+        routeSamples.splice(0, routeSamples.length - this.maxHttpRouteSamples);
+      }
+      this.httpRouteSamples.set(route, routeSamples);
     }
   }
 
-  async withHttpMetrics<T extends Response>(handler: () => Promise<T>): Promise<T> {
+  async withHttpMetrics<T extends Response>(
+    handler: () => Promise<T>,
+    route = "unknown",
+  ): Promise<T> {
     const start = typeof performance !== "undefined" && performance.now
       ? performance.now()
       : Date.now();
@@ -262,13 +374,13 @@ class MetricsCollector {
       const end = typeof performance !== "undefined" && performance.now
         ? performance.now()
         : Date.now();
-      this.recordHttpRequest(end - start, response?.status ?? 0);
+      this.recordHttpRequest(end - start, response?.status ?? 0, route);
       return response;
     } catch (err) {
       const end = typeof performance !== "undefined" && performance.now
         ? performance.now()
         : Date.now();
-      this.recordHttpRequest(end - start, 500);
+      this.recordHttpRequest(end - start, 500, route);
       throw err;
     }
   }
@@ -280,6 +392,21 @@ class MetricsCollector {
       commandsPerMinute: snapshot.commands.lastMinute,
       bandwidthSent: this.sentPerSecond,
       bandwidthReceived: this.receivedPerSecond,
+      httpRequestsPerMinute: snapshot.http.lastMinute,
+      httpErrorsPerMinute: snapshot.http.lastMinuteErrors,
+      httpLatencyAvg: snapshot.http.latencyAvg,
+      httpLatencyP95: snapshot.http.latencyP95,
+      httpLatencyP99: snapshot.http.latencyP99,
+      eventLoopAvg: snapshot.eventLoop.avg,
+      eventLoopP95: snapshot.eventLoop.p95,
+      heapUsed: snapshot.server.memoryUsage.heapUsed,
+      rss: snapshot.server.memoryUsage.rss,
+      systemMemoryUsedPercent: snapshot.server.systemMemory.usedPercent,
+      activeSessions:
+        snapshot.sessions.console +
+        snapshot.sessions.remoteDesktop +
+        snapshot.sessions.fileBrowser +
+        snapshot.sessions.process,
     };
 
     this.history.push(historyEntry);
@@ -297,6 +424,7 @@ class MetricsCollector {
     this.pruneTimestampWindow(this.commandTimestamps, oneHourAgo);
     this.pruneTimestampWindow(this.httpTimestamps, oneMinuteAgo);
     this.pruneTimestampWindow(this.httpErrorTimestamps, oneMinuteAgo);
+    this.pruneHttpSamples(this.httpSamples, oneMinuteAgo);
 
     const commandsLastMinute = this.countRecent(this.commandTimestamps, oneMinuteAgo);
     const commandsLastHour = this.commandTimestamps.length;
@@ -309,16 +437,13 @@ class MetricsCollector {
     const httpLastMinute = this.httpTimestamps.length;
     const httpErrorsLastMinute = this.httpErrorTimestamps.length;
 
-    const httpLatencySamples = [...this.httpLatencies].sort((a, b) => a - b);
-    const httpLatencyAvg = httpLatencySamples.length
-      ? httpLatencySamples.reduce((a, b) => a + b, 0) / httpLatencySamples.length
-      : 0;
-    const httpP95Index = httpLatencySamples.length
-      ? Math.max(0, Math.floor(httpLatencySamples.length * 0.95) - 1)
-      : 0;
-    const httpLatencyP95 = httpLatencySamples.length
-      ? httpLatencySamples[httpP95Index] ?? 0
-      : 0;
+    const httpLatencySamples = this.httpSamples
+      .map((sample) => sample.duration)
+      .sort((a, b) => a - b);
+    const httpLatencyAvg = this.average(httpLatencySamples);
+    const httpLatencyP95 = this.percentile(httpLatencySamples, 0.95);
+    const httpLatencyP99 = this.percentile(httpLatencySamples, 0.99);
+    const httpRoutes = this.getTopHttpRoutes(oneMinuteAgo);
 
     const eventLoopSamples = [...this.eventLoopDelays].sort((a, b) => a - b);
     const eventLoopAvg = eventLoopSamples.length
@@ -400,6 +525,8 @@ class MetricsCollector {
         lastMinuteErrors: httpErrorsLastMinute,
         latencyAvg: httpLatencyAvg,
         latencyP95: httpLatencyP95,
+        latencyP99: httpLatencyP99,
+        routes: httpRoutes,
       },
       eventLoop: {
         avg: eventLoopAvg,
@@ -428,7 +555,8 @@ class MetricsCollector {
     this.httpTotal = 0;
     this.httpTimestamps = [];
     this.httpErrorTimestamps = [];
-    this.httpLatencies = [];
+    this.httpSamples = [];
+    this.httpRouteSamples.clear();
     this.eventLoopDelays = [];
   }
 }

@@ -125,6 +125,31 @@ describe("MetricsCollector", () => {
       const snap = metrics.getSnapshot();
       expect(snap.http.latencyAvg).toBeCloseTo(50.5, 0);
       expect(snap.http.latencyP95).toBeGreaterThanOrEqual(90);
+      expect(snap.http.latencyP99).toBeGreaterThanOrEqual(99);
+    });
+
+    test("tracks slow HTTP routes", () => {
+      metrics.recordHttpRequest(15, 200, "GET /api/metrics");
+      metrics.recordHttpRequest(120, 200, "GET /api/clients/:id/rd/ws");
+      metrics.recordHttpRequest(200, 500, "GET /api/clients/:id/rd/ws");
+
+      const snap = metrics.getSnapshot();
+      expect(snap.http.routes[0].route).toBe("GET /api/clients/:id/rd/ws");
+      expect(snap.http.routes[0].countLastMinute).toBe(2);
+      expect(snap.http.routes[0].errorsLastMinute).toBe(1);
+      expect(snap.http.routes[0].latencyP95).toBeGreaterThanOrEqual(120);
+    });
+
+    test("does not count the metrics dashboard poll as HTTP pressure", () => {
+      metrics.recordHttpRequest(100, 200, "GET /api/metrics");
+      metrics.recordHttpRequest(20, 200, "GET /api/clients");
+
+      const snap = metrics.getSnapshot();
+      expect(snap.http.total).toBe(1);
+      expect(snap.http.lastMinute).toBe(1);
+      expect(snap.http.routes.map((route) => route.route)).toEqual([
+        "GET /api/clients",
+      ]);
     });
   });
 
@@ -175,6 +200,26 @@ describe("MetricsCollector", () => {
       const history = metrics.getHistory();
       expect(history).toHaveLength(1);
       expect(history[0].timestamp).toBe(snap.timestamp);
+    });
+
+    test("history captures pressure metrics for charting", () => {
+      metrics.recordHttpRequest(25, 200);
+      metrics.recordHttpRequest(80, 500);
+      metrics.recordBytesSent(1024);
+      metrics.recordBytesReceived(2048);
+
+      const snap = metrics.getSnapshot();
+      metrics.recordHistoryEntry(snap);
+
+      const [entry] = metrics.getHistory();
+      expect(entry.httpRequestsPerMinute).toBeGreaterThanOrEqual(2);
+      expect(entry.httpErrorsPerMinute).toBeGreaterThanOrEqual(1);
+      expect(entry.httpLatencyAvg).toBeGreaterThan(0);
+      expect(entry.httpLatencyP95).toBeGreaterThan(0);
+      expect(entry.heapUsed).toBeGreaterThan(0);
+      expect(entry.rss).toBeGreaterThan(0);
+      expect(entry.systemMemoryUsedPercent).toBeGreaterThanOrEqual(0);
+      expect(entry.activeSessions).toBe(0);
     });
 
     test("history is capped at maxHistoryPoints", () => {

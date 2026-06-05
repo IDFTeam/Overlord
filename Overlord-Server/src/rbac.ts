@@ -84,7 +84,55 @@ const PERMISSIONS = {
     roles: ["admin"],
   },
   "system:configure": {
-    description: "Change server-level settings (TLS, security, registration, notifications, appearance, etc.)",
+    description: "Legacy full server settings access (grants all system:* settings permissions)",
+    roles: ["admin"],
+  },
+  "system:security": {
+    description: "Change security policy settings",
+    roles: ["admin"],
+  },
+  "system:tls": {
+    description: "Change TLS and certificate settings",
+    roles: ["admin"],
+  },
+  "system:registration": {
+    description: "Change user registration policy settings",
+    roles: ["admin"],
+  },
+  "system:notifications": {
+    description: "Change global notification delivery settings",
+    roles: ["admin"],
+  },
+  "system:chat": {
+    description: "Change team chat settings",
+    roles: ["admin"],
+  },
+  "system:appearance": {
+    description: "Change custom CSS and appearance settings",
+    roles: ["admin"],
+  },
+  "system:thumbnails": {
+    description: "Change screenshot thumbnail settings",
+    roles: ["admin"],
+  },
+  "system:build-limits": {
+    description: "Change build rate limit settings",
+    roles: ["admin"],
+  },
+  "system:export-import": {
+    description: "Export and import server settings",
+    roles: ["admin"],
+  },
+  "system:health": {
+    description: "View server health diagnostics",
+    roles: ["admin"],
+  },
+  "system:health:manage": {
+    description: "Run server health maintenance actions",
+    roles: ["admin"],
+  },
+  "system:profiler": {
+    description: "Run server CPU and memory profiler captures",
     roles: ["admin"],
   },
   "clients:elevate": {
@@ -128,8 +176,17 @@ export function hasPermission(
   if (grantedByRole) return true;
   // Permission groups + per-user extras are *additive only*: they can grant a
   // permission the role doesn't have, but they cannot revoke one the role does.
-  if (userId !== undefined && getUserGrantedPermissions(userId).has(permission)) {
-    return true;
+  if (userId !== undefined) {
+    const granted = getUserGrantedPermissions(userId);
+    if (granted.has(permission)) return true;
+    if (
+      typeof permission === "string" &&
+      permission.startsWith("system:") &&
+      permission !== "system:configure" &&
+      granted.has("system:configure")
+    ) {
+      return true;
+    }
   }
   return false;
 }

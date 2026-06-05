@@ -1,5 +1,12 @@
 let clientsChart = null;
 let commandsChart = null;
+let bandwidthChart = null;
+let httpRequestsChart = null;
+let httpChart = null;
+let memoryChart = null;
+let eventLoopChart = null;
+let sessionsChart = null;
+let osChart = null;
 let countryMap = null;
 let countriesLayer = null;
 let countryCounts = {};
@@ -7,6 +14,8 @@ let maxCountryCount = 0;
 let latestByCountry = {};
 
 const GEOJSON_URL = "/vendor/geo-countries/countries.geojson";
+const MAX_CHART_POINTS = 240;
+const METRICS_POLL_INTERVAL_MS = 5000;
 
 if (typeof Chart !== "undefined") {
   Chart.defaults.color = "#cbd5e1";
@@ -14,9 +23,69 @@ if (typeof Chart !== "undefined") {
   Chart.defaults.font.family = "Inter, system-ui, sans-serif";
 }
 
+function chartTooltip() {
+  return {
+    backgroundColor: "#0f172a",
+    titleColor: "#e2e8f0",
+    bodyColor: "#cbd5e1",
+    borderColor: "#334155",
+    borderWidth: 1,
+  };
+}
+
+function lineChartOptions(extra = {}) {
+  const extraPlugins = extra.plugins || {};
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: "index", intersect: false },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: { color: "#94a3b8" },
+        grid: { color: "rgba(100, 116, 139, 0.1)" },
+      },
+      x: {
+        ticks: {
+          color: "#94a3b8",
+          maxTicksLimit: 6,
+          autoSkip: true,
+          maxRotation: 0,
+        },
+        grid: { color: "rgba(100, 116, 139, 0.1)" },
+      },
+      ...(extra.scales || {}),
+    },
+    ...extra,
+    plugins: {
+      legend:
+        extraPlugins.legend ?? { display: true, labels: { boxWidth: 10, boxHeight: 10 } },
+      tooltip: chartTooltip(),
+      ...extraPlugins,
+    },
+  };
+}
+
+function makeLineChart(canvas, datasets, options = {}) {
+  if (!canvas) return null;
+  return new Chart(canvas, {
+    type: "line",
+    data: { labels: [], datasets },
+    options: lineChartOptions(options),
+  });
+}
+
 function initCharts() {
   const clientsCtx = document.getElementById("clients-chart");
   const commandsCtx = document.getElementById("commands-chart");
+  const bandwidthCtx = document.getElementById("bandwidth-chart");
+  const httpRequestsCtx = document.getElementById("http-requests-chart");
+  const httpCtx = document.getElementById("http-chart");
+  const memoryCtx = document.getElementById("memory-chart");
+  const eventLoopCtx = document.getElementById("event-loop-chart");
+  const sessionsCtx = document.getElementById("sessions-chart");
+  const osCtx = document.getElementById("os-chart");
 
   clientsChart = new Chart(clientsCtx, {
     type: "line",
@@ -119,13 +188,283 @@ function initCharts() {
       },
     },
   });
+
+  bandwidthChart = makeLineChart(
+    bandwidthCtx,
+    [
+      {
+        label: "Sent/s",
+        data: [],
+        borderColor: "rgb(251, 146, 60)",
+        backgroundColor: "rgba(251, 146, 60, 0.12)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+      {
+        label: "Received/s",
+        data: [],
+        borderColor: "rgb(56, 189, 248)",
+        backgroundColor: "rgba(56, 189, 248, 0.1)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+    ],
+    {
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: "#94a3b8",
+            callback: (value) => formatBytes(Number(value)),
+          },
+          grid: { color: "rgba(100, 116, 139, 0.1)" },
+        },
+      },
+    },
+  );
+
+  httpRequestsChart = makeLineChart(
+    httpRequestsCtx,
+    [
+      {
+        label: "requests/min",
+        data: [],
+        borderColor: "rgb(52, 211, 153)",
+        backgroundColor: "rgba(52, 211, 153, 0.12)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+      {
+        label: "errors/min",
+        data: [],
+        borderColor: "rgb(248, 113, 113)",
+        backgroundColor: "rgba(248, 113, 113, 0.14)",
+        fill: false,
+        tension: 0.25,
+        pointRadius: 0,
+        borderDash: [5, 4],
+        borderWidth: 2,
+      },
+    ],
+    {
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { color: "#94a3b8", precision: 0 },
+          grid: { color: "rgba(100, 116, 139, 0.1)" },
+        },
+      },
+    },
+  );
+
+  httpChart = makeLineChart(
+    httpCtx,
+    [
+      {
+        label: "p99 ms",
+        data: [],
+        borderColor: "rgb(248, 113, 113)",
+        backgroundColor: "rgba(248, 113, 113, 0.08)",
+        fill: false,
+        tension: 0.35,
+        pointRadius: 0,
+        borderDash: [4, 4],
+        borderWidth: 2,
+      },
+      {
+        label: "p95 ms",
+        data: [],
+        borderColor: "rgb(244, 63, 94)",
+        backgroundColor: "rgba(244, 63, 94, 0.1)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+      {
+        label: "avg ms",
+        data: [],
+        borderColor: "rgb(251, 191, 36)",
+        backgroundColor: "rgba(251, 191, 36, 0.08)",
+        fill: false,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+    ],
+    {
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { color: "#94a3b8", callback: (value) => `${Math.round(Number(value))} ms` },
+          grid: { color: "rgba(100, 116, 139, 0.1)" },
+        },
+      },
+    },
+  );
+
+  memoryChart = makeLineChart(
+    memoryCtx,
+    [
+      {
+        label: "Heap",
+        data: [],
+        borderColor: "rgb(34, 211, 238)",
+        backgroundColor: "rgba(34, 211, 238, 0.1)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        yAxisID: "y",
+        borderWidth: 2,
+      },
+      {
+        label: "RSS",
+        data: [],
+        borderColor: "rgb(129, 140, 248)",
+        backgroundColor: "rgba(129, 140, 248, 0.08)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        yAxisID: "y",
+        borderWidth: 2,
+      },
+      {
+        label: "System %",
+        data: [],
+        borderColor: "rgb(52, 211, 153)",
+        backgroundColor: "rgba(52, 211, 153, 0.08)",
+        fill: false,
+        tension: 0.35,
+        pointRadius: 0,
+        yAxisID: "y1",
+        borderWidth: 2,
+      },
+    ],
+    {
+      scales: {
+        y: {
+          beginAtZero: true,
+          position: "left",
+          ticks: { color: "#94a3b8", callback: (value) => formatBytes(Number(value)) },
+          grid: { color: "rgba(100, 116, 139, 0.1)" },
+        },
+        y1: {
+          beginAtZero: true,
+          max: 100,
+          position: "right",
+          ticks: { color: "#86efac", callback: (value) => `${Math.round(Number(value))}%` },
+          grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  );
+
+  eventLoopChart = makeLineChart(
+    eventLoopCtx,
+    [
+      {
+        label: "p95 lag",
+        data: [],
+        borderColor: "rgb(251, 191, 36)",
+        backgroundColor: "rgba(251, 191, 36, 0.12)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+      {
+        label: "avg lag",
+        data: [],
+        borderColor: "rgb(96, 165, 250)",
+        backgroundColor: "rgba(96, 165, 250, 0.08)",
+        fill: false,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      },
+    ],
+    {
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { color: "#94a3b8", callback: (value) => `${Math.round(Number(value))} ms` },
+          grid: { color: "rgba(100, 116, 139, 0.1)" },
+        },
+      },
+    },
+  );
+
+  sessionsChart = sessionsCtx ? new Chart(sessionsCtx, {
+    type: "doughnut",
+    data: {
+      labels: ["Console", "Remote Desktop", "Files", "Processes"],
+      datasets: [{
+        data: [0, 0, 0, 0],
+        backgroundColor: ["#34d399", "#c084fc", "#60a5fa", "#fb923c"],
+        borderColor: "#0f172a",
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      cutout: "64%",
+      plugins: {
+        legend: { position: "right", labels: { boxWidth: 10, boxHeight: 10 } },
+        tooltip: chartTooltip(),
+      },
+    },
+  }) : null;
+
+  osChart = osCtx ? new Chart(osCtx, {
+    type: "bar",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Clients",
+        data: [],
+        backgroundColor: "rgba(56, 189, 248, 0.5)",
+        borderColor: "rgb(56, 189, 248)",
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: chartTooltip(),
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { color: "#94a3b8", precision: 0 },
+          grid: { color: "rgba(100, 116, 139, 0.1)" },
+        },
+        y: {
+          ticks: { color: "#94a3b8" },
+          grid: { display: false },
+        },
+      },
+    },
+  }) : null;
 }
 
 function formatBytes(bytes) {
-  if (bytes === 0) return "0 B";
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1) return `${bytes.toFixed(2)} B`;
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
@@ -269,6 +608,10 @@ function updateMetrics(data, debug) {
   if (httpLatencyP95El) {
     httpLatencyP95El.textContent = formatMs(data.http.latencyP95 || 0);
   }
+  const httpLatencyP99El = document.getElementById("http-latency-p99");
+  if (httpLatencyP99El) {
+    httpLatencyP99El.textContent = formatMs(data.http.latencyP99 || 0);
+  }
   const eventLoopAvgEl = document.getElementById("event-loop-avg");
   if (eventLoopAvgEl) {
     eventLoopAvgEl.textContent = formatMs(data.eventLoop.avg || 0);
@@ -312,6 +655,57 @@ function updateMetrics(data, debug) {
       .join("");
   } else {
     osList.innerHTML = '<div class="text-slate-500">No clients</div>';
+  }
+
+  if (sessionsChart) {
+    sessionsChart.data.datasets[0].data = [
+      data.sessions.console || 0,
+      data.sessions.remoteDesktop || 0,
+      data.sessions.fileBrowser || 0,
+      data.sessions.process || 0,
+    ];
+    sessionsChart.update("none");
+  }
+
+  if (osChart) {
+    const osEntries = Object.entries(data.clients.byOS || {})
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    osChart.data.labels = osEntries.length ? osEntries.map(([label]) => label) : ["No clients"];
+    osChart.data.datasets[0].data = osEntries.length ? osEntries.map(([, count]) => count) : [0];
+    osChart.update("none");
+  }
+
+  const httpRoutesList = document.getElementById("http-routes");
+  if (httpRoutesList) {
+    const routes = Array.isArray(data.http.routes) ? data.http.routes : [];
+    if (routes.length > 0) {
+      httpRoutesList.innerHTML = routes
+        .map((route) => {
+          const errorClass = route.errorsLastMinute > 0 ? "text-red-300" : "text-slate-400";
+          return `
+            <div class="bg-slate-800/50 rounded p-3 min-w-0">
+              <div class="text-xs text-slate-400 mb-2 truncate" title="${escapeHtml(route.route)}">
+                ${escapeHtml(route.route)}
+              </div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <span class="text-slate-500">p95</span>
+                <span class="font-semibold text-right">${formatMs(route.latencyP95 || 0)}</span>
+                <span class="text-slate-500">avg</span>
+                <span class="font-semibold text-right">${formatMs(route.latencyAvg || 0)}</span>
+                <span class="text-slate-500">req/min</span>
+                <span class="font-semibold text-right">${Number(route.countLastMinute || 0).toLocaleString()}</span>
+                <span class="text-slate-500">errors</span>
+                <span class="font-semibold text-right ${errorClass}">${Number(route.errorsLastMinute || 0).toLocaleString()}</span>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    } else {
+      httpRoutesList.innerHTML =
+        '<div class="text-slate-500 col-span-full text-center py-4">No HTTP route samples yet</div>';
+    }
   }
 
   const commandTypesList = document.getElementById("command-types");
@@ -462,7 +856,11 @@ async function initCountryMap() {
 }
 
 function updateCharts(history, snapshot) {
-  if (history.length === 0) {
+  const points = Array.isArray(history) && history.length > 0
+    ? history.slice(-MAX_CHART_POINTS)
+    : [];
+
+  if (points.length === 0) {
     const now = new Date();
     const label = formatTime(now.getTime());
 
@@ -473,26 +871,100 @@ function updateCharts(history, snapshot) {
     commandsChart.data.labels = [label];
     commandsChart.data.datasets[0].data = [snapshot.commands.lastMinute];
     commandsChart.update("none");
+
+    if (bandwidthChart) {
+      bandwidthChart.data.labels = [label];
+      bandwidthChart.data.datasets[0].data = [snapshot.bandwidth.sentPerSecond || 0];
+      bandwidthChart.data.datasets[1].data = [snapshot.bandwidth.receivedPerSecond || 0];
+      bandwidthChart.update("none");
+    }
+
+    if (httpChart) {
+      httpChart.data.labels = [label];
+      httpChart.data.datasets[0].data = [snapshot.http.latencyP99 || 0];
+      httpChart.data.datasets[1].data = [snapshot.http.latencyP95 || 0];
+      httpChart.data.datasets[2].data = [snapshot.http.latencyAvg || 0];
+      httpChart.update("none");
+    }
+
+    if (httpRequestsChart) {
+      httpRequestsChart.data.labels = [label];
+      httpRequestsChart.data.datasets[0].data = [snapshot.http.lastMinute || 0];
+      httpRequestsChart.data.datasets[1].data = [snapshot.http.lastMinuteErrors || 0];
+      httpRequestsChart.update("none");
+    }
+
+    if (memoryChart) {
+      memoryChart.data.labels = [label];
+      memoryChart.data.datasets[0].data = [snapshot.server.memoryUsage.heapUsed || 0];
+      memoryChart.data.datasets[1].data = [snapshot.server.memoryUsage.rss || 0];
+      memoryChart.data.datasets[2].data = [snapshot.server.systemMemory.usedPercent || 0];
+      memoryChart.update("none");
+    }
+
+    if (eventLoopChart) {
+      eventLoopChart.data.labels = [label];
+      eventLoopChart.data.datasets[0].data = [snapshot.eventLoop.p95 || 0];
+      eventLoopChart.data.datasets[1].data = [snapshot.eventLoop.avg || 0];
+      eventLoopChart.update("none");
+    }
     return;
   }
 
-  const labels = history.map((h) => formatTime(h.timestamp));
-  const clientsData = history.map((h) => h.clientsOnline);
+  const labels = points.map((h) => formatTime(h.timestamp));
+  const clientsData = points.map((h) => h.clientsOnline || 0);
 
   clientsChart.data.labels = labels;
   clientsChart.data.datasets[0].data = clientsData;
   clientsChart.update("none");
 
-  const commandsData = history.map((h) => h.commandsPerMinute);
+  const commandsData = points.map((h) => h.commandsPerMinute || 0);
 
   commandsChart.data.labels = labels;
   commandsChart.data.datasets[0].data = commandsData;
   commandsChart.update("none");
+
+  if (bandwidthChart) {
+    bandwidthChart.data.labels = labels;
+    bandwidthChart.data.datasets[0].data = points.map((h) => h.bandwidthSent || 0);
+    bandwidthChart.data.datasets[1].data = points.map((h) => h.bandwidthReceived || 0);
+    bandwidthChart.update("none");
+  }
+
+  if (httpChart) {
+    httpChart.data.labels = labels;
+    httpChart.data.datasets[0].data = points.map((h) => h.httpLatencyP99 || 0);
+    httpChart.data.datasets[1].data = points.map((h) => h.httpLatencyP95 || 0);
+    httpChart.data.datasets[2].data = points.map((h) => h.httpLatencyAvg || 0);
+    httpChart.update("none");
+  }
+
+  if (httpRequestsChart) {
+    httpRequestsChart.data.labels = labels;
+    httpRequestsChart.data.datasets[0].data = points.map((h) => h.httpRequestsPerMinute || 0);
+    httpRequestsChart.data.datasets[1].data = points.map((h) => h.httpErrorsPerMinute || 0);
+    httpRequestsChart.update("none");
+  }
+
+  if (memoryChart) {
+    memoryChart.data.labels = labels;
+    memoryChart.data.datasets[0].data = points.map((h) => h.heapUsed || 0);
+    memoryChart.data.datasets[1].data = points.map((h) => h.rss || 0);
+    memoryChart.data.datasets[2].data = points.map((h) => h.systemMemoryUsedPercent || 0);
+    memoryChart.update("none");
+  }
+
+  if (eventLoopChart) {
+    eventLoopChart.data.labels = labels;
+    eventLoopChart.data.datasets[0].data = points.map((h) => h.eventLoopP95 || 0);
+    eventLoopChart.data.datasets[1].data = points.map((h) => h.eventLoopAvg || 0);
+    eventLoopChart.update("none");
+  }
 }
 
 async function fetchMetrics() {
   try {
-    const response = await fetch("/api/metrics", {
+    const response = await fetch(`/api/metrics?historyLimit=${MAX_CHART_POINTS}`, {
       credentials: "include",
     });
 
@@ -589,7 +1061,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   await fetchMetrics();
 
-  setInterval(fetchMetrics, 2000);
+  setInterval(fetchMetrics, METRICS_POLL_INTERVAL_MS);
 
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn && !logoutBtn.dataset.boundLogout) {

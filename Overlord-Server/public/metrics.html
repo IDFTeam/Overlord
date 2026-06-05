@@ -145,6 +145,101 @@
           </div>
         </div>
 
+        <!-- Operational Pressure Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+              <i class="fa-solid fa-network-wired text-orange-400"></i>
+              Network Throughput
+            </h3>
+            <div class="h-64">
+              <canvas id="bandwidth-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+              <i class="fa-solid fa-arrow-right-arrow-left text-emerald-400"></i>
+              HTTP Requests
+            </h3>
+            <div class="h-64">
+              <canvas id="http-requests-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+              <i class="fa-solid fa-gauge-high text-rose-400"></i>
+              HTTP Latency
+            </h3>
+            <div class="h-64">
+              <canvas id="http-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+              <i class="fa-solid fa-memory text-cyan-400"></i>
+              Runtime Memory
+            </h3>
+            <div class="h-64">
+              <canvas id="memory-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+              <i class="fa-solid fa-stopwatch text-amber-400"></i>
+              Event Loop Lag
+            </h3>
+            <div class="h-64">
+              <canvas id="event-loop-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Slow HTTP Routes -->
+        <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <h3 class="text-lg font-semibold flex items-center gap-2">
+              <i class="fa-solid fa-route text-rose-400"></i>
+              Slowest HTTP Routes
+            </h3>
+            <div class="text-xs text-slate-500">Sorted by p95 latency, last minute</div>
+          </div>
+          <div
+            id="http-routes"
+            class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3"
+          >
+            <div class="text-slate-500 col-span-full text-center py-4">
+              No HTTP route samples yet
+            </div>
+          </div>
+        </div>
+
+        <!-- Mix Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+              <i class="fa-solid fa-plug text-emerald-400"></i>
+              Session Mix
+            </h3>
+            <div class="h-64">
+              <canvas id="sessions-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+              <i class="fa-brands fa-windows text-cyan-400"></i>
+              Operating Systems
+            </h3>
+            <div class="h-64">
+              <canvas id="os-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
         <!-- Additional Stats -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <!-- Server Stats -->
@@ -181,36 +276,22 @@
             </div>
           </div>
 
-          <!-- Ping Stats -->
+          <!-- Clients by OS -->
           <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
             <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
-              <i class="fa-solid fa-signal text-blue-400"></i>
-              Ping Statistics
+              <i class="fa-brands fa-windows text-cyan-400"></i>
+              Clients by OS
             </h3>
-            <div class="space-y-2 text-sm">
-              <div class="flex justify-between">
-                <span class="text-slate-400">Average:</span>
-                <span id="ping-avg">-</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Min / Max:</span>
-                <span
-                  ><span id="ping-min">-</span> /
-                  <span id="ping-max">-</span></span
-                >
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Samples:</span>
-                <span id="ping-count">0</span>
-              </div>
+            <div id="clients-by-os" class="space-y-2 text-sm">
+              <div class="text-slate-500">No data</div>
             </div>
           </div>
 
-          <!-- HTTP & Event Loop -->
+          <!-- HTTP, Ping & Event Loop -->
           <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
             <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
               <i class="fa-solid fa-wave-square text-amber-400"></i>
-              HTTP & Event Loop
+              HTTP, Ping & Event Loop
             </h3>
             <div class="space-y-2 text-sm">
               <div class="flex justify-between">
@@ -222,10 +303,11 @@
                 <span id="http-errors-minute">0</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-slate-400">Latency avg/p95:</span>
+                <span class="text-slate-400">Latency avg/p95/p99:</span>
                 <span>
                   <span id="http-latency-avg">0</span> /
-                  <span id="http-latency-p95">0</span>
+                  <span id="http-latency-p95">0</span> /
+                  <span id="http-latency-p99">0</span>
                 </span>
               </div>
               <div class="flex justify-between">
@@ -239,17 +321,21 @@
                 <span class="text-slate-400">Loop lag max:</span>
                 <span id="event-loop-max">0</span>
               </div>
-            </div>
-          </div>
-
-          <!-- Client Distribution -->
-          <div class="bg-slate-900/70 border border-slate-800 rounded-lg p-4">
-            <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
-              <i class="fa-brands fa-windows text-cyan-400"></i>
-              Clients by OS
-            </h3>
-            <div id="clients-by-os" class="space-y-2 text-sm">
-              <div class="text-slate-500">No data</div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Ping avg:</span>
+                <span id="ping-avg">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Ping min/max:</span>
+                <span>
+                  <span id="ping-min">-</span> /
+                  <span id="ping-max">-</span>
+                </span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Ping samples:</span>
+                <span id="ping-count">0</span>
+              </div>
             </div>
           </div>
         </div>

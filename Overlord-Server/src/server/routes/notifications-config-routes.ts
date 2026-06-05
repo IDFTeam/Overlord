@@ -78,7 +78,7 @@ export async function handleNotificationsConfigRoutes(
       });
     }
     try {
-      requirePermission(user, "system:configure");
+      requirePermission(user, "system:notifications");
     } catch (error) {
       if (error instanceof Response) return error;
       return new Response("Forbidden", { status: 403 });
@@ -95,7 +95,7 @@ export async function handleNotificationsConfigRoutes(
       });
     }
     try {
-      requirePermission(user, "system:configure");
+      requirePermission(user, "system:notifications");
     } catch (error) {
       if (error instanceof Response) return error;
       return new Response("Forbidden", { status: 403 });

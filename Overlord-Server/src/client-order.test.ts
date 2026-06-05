@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { deleteClientRow, listClients, setClientBookmark, upsertClientRow } from "./db";
+import { db } from "./db/connection";
+import { deleteClientRow, listClients, setClientBookmark, setClientTag, upsertClientRow } from "./db";
 
 const createdClientIds: string[] = [];
 
@@ -106,6 +107,107 @@ describe("client list ordering", () => {
 
       expect(result.items[0]?.id).toBe(`${prefix}-online`);
       expect(result.items[0]?.online).toBe(true);
+    } finally {
+      cleanupCreatedClients();
+    }
+  });
+
+  test("search tolerates typos across client metadata", () => {
+    try {
+      const prefix = `fuse-${Date.now().toString(36)}`;
+      const id = `${prefix}-finance-terminal`;
+
+      createTempClient(id, {
+        online: true,
+        lastSeen: Date.now(),
+        host: "finance-terminal",
+      });
+      setClientTag(id, "Payroll Workstation", "Quarterly reporting machine");
+
+      const result = listClients({
+        page: 1,
+        pageSize: 12,
+        search: "payrol workstaton",
+        sort: "last_seen_desc",
+        statusFilter: "all",
+        osFilter: "all",
+        countryFilter: "all",
+        enrollmentFilter: "all",
+      });
+
+      expect(result.items.some((item) => item.id === id)).toBe(true);
+    } finally {
+      cleanupCreatedClients();
+    }
+  });
+});
+
+describe("client search index", () => {
+  function getSearchIndexRow(id: string) {
+    return db
+      .query<{ id: string; host: string | null; customTag: string | null; customTagNote: string | null }>(
+        `SELECT id, host, custom_tag as customTag, custom_tag_note as customTagNote
+         FROM client_search_fts
+         WHERE id = ?`,
+      )
+      .get(id);
+  }
+
+  test("keeps the FTS search index in sync when client metadata changes", () => {
+    try {
+      const id = `fts-sync-${Date.now().toString(36)}`;
+
+      createTempClient(id, {
+        online: true,
+        lastSeen: Date.now(),
+        host: "dispatch-terminal-old",
+      });
+
+      expect(getSearchIndexRow(id)?.host).toBe("dispatch-terminal-old");
+
+      createTempClient(id, {
+        online: true,
+        lastSeen: Date.now(),
+        host: "dispatch-terminal-new",
+      });
+      setClientTag(id, "Priority Ops", "Shift handoff workstation");
+
+      const updatedRow = getSearchIndexRow(id);
+      expect(updatedRow?.host).toBe("dispatch-terminal-new");
+      expect(updatedRow?.customTag).toBe("Priority Ops");
+      expect(updatedRow?.customTagNote).toBe("Shift handoff workstation");
+
+      deleteClientRow(id);
+      expect(getSearchIndexRow(id)).toBeNull();
+    } finally {
+      cleanupCreatedClients();
+    }
+  });
+
+  test("uses indexed candidates before fuzzy matching so exact token searches stay fast", () => {
+    try {
+      const prefix = `fts-candidate-${Date.now().toString(36)}`;
+      const id = `${prefix}-ops-node`;
+
+      createTempClient(id, {
+        online: true,
+        lastSeen: Date.now(),
+        host: "northbridge-ops-node",
+      });
+      setClientTag(id, "Incident Desk", "CPU spike triage host");
+
+      const result = listClients({
+        page: 1,
+        pageSize: 12,
+        search: "northbridge",
+        sort: "last_seen_desc",
+        statusFilter: "all",
+        osFilter: "all",
+        countryFilter: "all",
+        enrollmentFilter: "all",
+      });
+
+      expect(result.items.some((item) => item.id === id)).toBe(true);
     } finally {
       cleanupCreatedClients();
     }

@@ -103,6 +103,19 @@ describe("/api/auth/me permissions array", () => {
     expect(new Set(body.permissions).has("clients:metadata")).toBe(true);
   });
 
+  test("legacy system:configure extra grants the split settings permissions", async () => {
+    const viewer = await tempUser("viewer");
+    setUserExtraPermissions(viewer.user.id, ["system:configure"]);
+    const body = await fetchMe(viewer.token);
+    const set = new Set(body.permissions);
+    expect(set.has("system:configure")).toBe(true);
+    expect(set.has("system:security")).toBe(true);
+    expect(set.has("system:tls")).toBe(true);
+    expect(set.has("system:registration")).toBe(true);
+    expect(set.has("system:health")).toBe(true);
+    expect(set.has("system:profiler")).toBe(true);
+  });
+
   test("viewer in a group gains the group's permissions in /api/auth/me", async () => {
     const viewer = await tempUser("viewer");
     const group = tempGroup("me_group", ["clients:disconnect", "audit:view"]);

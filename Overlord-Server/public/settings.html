@@ -90,15 +90,16 @@
             <a data-target="wipe-offline-section"     class="settings-nav-link" data-permission="clients:control" style="--accent: 248 113 113"><i class="fa-solid fa-circle-minus w-4 text-red-400"></i><span>Wipe Offline Clients</span></a>
 
             <span class="settings-nav-group-label">Admin</span>
-            <a data-target="section-security"         class="settings-nav-link" data-permission="system:configure" style="--accent: 129 140 248"><i class="fa-solid fa-shield-halved w-4 text-indigo-400"></i><span>Security Policy</span></a>
-            <a data-target="thumbnails-section"       class="settings-nav-link" data-permission="system:configure" style="--accent: 56 189 248"><i class="fa-solid fa-images w-4 text-sky-400"></i><span>Screenshot Thumbnails</span></a>
-            <a data-target="section-tls"              class="settings-nav-link" data-permission="system:configure" style="--accent: 34 211 238"><i class="fa-solid fa-certificate w-4 text-cyan-400"></i><span>TLS Certificates</span></a>
-            <a data-target="chat-settings-section"    class="settings-nav-link" data-permission="system:configure" style="--accent: 56 189 248"><i class="fa-solid fa-comments w-4 text-sky-400"></i><span>Team Chat</span></a>
-            <a data-target="registration-section"     class="settings-nav-link" data-permission="system:configure" style="--accent: 52 211 153"><i class="fa-solid fa-user-plus w-4 text-emerald-400"></i><span>Registration</span></a>
-            <a data-target="build-rate-limit-section" class="settings-nav-link" data-permission="system:configure" style="--accent: 251 146 60"><i class="fa-solid fa-gauge-high w-4 text-orange-400"></i><span>Build Rate Limit</span></a>
-            <a data-target="section-appearance"       class="settings-nav-link" data-permission="system:configure" style="--accent: 232 121 249"><i class="fa-solid fa-paintbrush w-4 text-fuchsia-400"></i><span>Custom CSS</span></a>
-            <a data-target="export-import-section"    class="settings-nav-link" data-permission="system:configure" style="--accent: 251 191 36"><i class="fa-solid fa-file-export w-4 text-amber-400"></i><span>Export / Import</span></a>
-            <a data-target="section-health"           class="settings-nav-link" data-permission="system:configure" style="--accent: 34 211 238"><i class="fa-solid fa-heart-pulse w-4 text-cyan-400"></i><span>Server Health</span></a>
+            <a data-target="section-permissions-overview" class="settings-nav-link" data-permission="users:manage" style="--accent: 167 139 250"><i class="fa-solid fa-user-shield w-4 text-violet-400"></i><span>Access Overview</span></a>
+            <a data-target="section-security"         class="settings-nav-link" data-permission="system:security" style="--accent: 129 140 248"><i class="fa-solid fa-shield-halved w-4 text-indigo-400"></i><span>Security Policy</span></a>
+            <a data-target="section-tls"              class="settings-nav-link" data-permission="system:tls" style="--accent: 34 211 238"><i class="fa-solid fa-certificate w-4 text-cyan-400"></i><span>TLS Certificates</span></a>
+            <a data-target="chat-settings-section"    class="settings-nav-link" data-permission="system:chat" style="--accent: 56 189 248"><i class="fa-solid fa-comments w-4 text-sky-400"></i><span>Team Chat</span></a>
+            <a data-target="registration-section"     class="settings-nav-link" data-permission="system:registration" style="--accent: 52 211 153"><i class="fa-solid fa-user-plus w-4 text-emerald-400"></i><span>Registration</span></a>
+            <a data-target="thumbnails-section"       class="settings-nav-link" data-permission="system:thumbnails" style="--accent: 56 189 248"><i class="fa-solid fa-images w-4 text-sky-400"></i><span>Screenshot Thumbnails</span></a>
+            <a data-target="build-rate-limit-section" class="settings-nav-link" data-permission="system:build-limits" style="--accent: 251 146 60"><i class="fa-solid fa-gauge-high w-4 text-orange-400"></i><span>Build Rate Limit</span></a>
+            <a data-target="section-appearance"       class="settings-nav-link" data-permission="system:appearance" style="--accent: 232 121 249"><i class="fa-solid fa-paintbrush w-4 text-fuchsia-400"></i><span>Custom CSS</span></a>
+            <a data-target="export-import-section"    class="settings-nav-link" data-permission="system:export-import" style="--accent: 251 191 36"><i class="fa-solid fa-file-export w-4 text-amber-400"></i><span>Export / Import</span></a>
+            <a data-target="section-health"           class="settings-nav-link" data-permission="system:health" style="--accent: 34 211 238"><i class="fa-solid fa-heart-pulse w-4 text-cyan-400"></i><span>Server Health</span></a>
           </nav>
         </aside>
 
@@ -552,8 +553,30 @@
 
       <!-- ========== ADMIN ========== -->
 
-      <!-- Security Policy -->
-      <section id="section-security" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <!-- Access Overview -->
+      <section id="section-permissions-overview" data-permission="users:manage" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-violet-500/10 border border-violet-500/30">
+            <i class="fa-solid fa-user-shield text-violet-400"></i>
+          </div>
+          <div>
+            <h2 class="text-lg font-semibold">Access Overview</h2>
+            <p class="text-sm text-slate-400">Review your effective permissions and jump to user access management.</p>
+          </div>
+        </div>
+        <div id="settings-permissions-summary" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+        <div class="flex flex-wrap items-center gap-3">
+          <a href="/users" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium">
+            <i class="fa-solid fa-users-gear"></i> Manage Users
+          </a>
+          <span class="inline-flex items-center gap-2 max-w-full px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 text-slate-300 text-sm">
+            <i class="fa-solid fa-desktop text-sky-400"></i>
+            <span class="min-w-0 leading-snug">Client access rules are edited from a selected user in Manage Users.</span>
+          </span>
+        </div>
+      </section>
+
+      <section id="section-security" data-permission="system:security" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/30">
             <i class="fa-solid fa-shield-halved text-indigo-400"></i>
@@ -566,7 +589,7 @@
 
         <form id="security-form" class="space-y-4">
           <div id="security-permission-note" class="hidden rounded-lg border border-amber-800 bg-amber-900/20 text-amber-200 px-3 py-2 text-sm">
-            Only admins can update security policy settings.
+            Your permissions do not allow security policy changes.
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -675,7 +698,7 @@
       </section>
 
       <!-- TLS Certificates -->
-      <section id="section-tls" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <section id="section-tls" data-permission="system:tls" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
             <i class="fa-solid fa-certificate text-cyan-400"></i>
@@ -688,7 +711,7 @@
 
         <form id="tls-form" class="space-y-4">
           <div id="tls-permission-note" class="hidden rounded-lg border border-amber-800 bg-amber-900/20 text-amber-200 px-3 py-2 text-sm">
-            Only admins can update TLS settings.
+            Your permissions do not allow TLS setting changes.
           </div>
 
           <label class="flex items-center gap-2 text-sm">
@@ -777,7 +800,7 @@
       </section>
 
       <!-- Team Chat -->
-      <section id="chat-settings-section" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <section id="chat-settings-section" data-permission="system:chat" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/30">
             <i class="fa-solid fa-comments text-sky-400"></i>
@@ -813,7 +836,7 @@
       </section>
 
       <!-- Registration Settings (admin only) -->
-      <section id="registration-section" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <section id="registration-section" data-permission="system:registration" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
             <i class="fa-solid fa-user-plus text-emerald-400"></i>
@@ -920,8 +943,8 @@
         </div>
       </section>
 
-      <!-- Screenshot Thumbnails (admin only) -->
-      <section id="thumbnails-section" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <!-- Screenshot Thumbnails -->
+      <section id="thumbnails-section" data-permission="system:thumbnails" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/30">
             <i class="fa-solid fa-images text-sky-400"></i>
@@ -961,7 +984,7 @@
       </section>
 
       <!-- Build Rate Limit (admin only) -->
-      <section id="build-rate-limit-section" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <section id="build-rate-limit-section" data-permission="system:build-limits" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/30">
             <i class="fa-solid fa-gauge-high text-orange-400"></i>
@@ -995,7 +1018,7 @@
       </section>
 
       <!-- Custom CSS -->
-      <section id="section-appearance" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <section id="section-appearance" data-permission="system:appearance" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/30">
             <i class="fa-solid fa-paintbrush text-fuchsia-400"></i>
@@ -1008,7 +1031,7 @@
 
         <form id="appearance-form" class="space-y-4">
           <div id="appearance-permission-note" class="hidden rounded-lg border border-amber-800 bg-amber-900/20 text-amber-200 px-3 py-2 text-sm">
-            Only admins can update custom CSS.
+            Your permissions do not allow custom CSS changes.
           </div>
 
           <label class="block">
@@ -1033,7 +1056,7 @@
       </section>
 
       <!-- Export & Import -->
-      <section id="export-import-section" data-permission="system:configure" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
+      <section id="export-import-section" data-permission="system:export-import" class="hidden bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section">
         <div class="flex items-center gap-3">
           <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/30">
             <i class="fa-solid fa-file-export text-amber-400"></i>
@@ -1081,7 +1104,7 @@
       </section>
 
         <!-- Server Health -->
-        <section id="section-health" class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section hidden" data-permission="system:configure">
+        <section id="section-health" class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4 settings-section hidden" data-permission="system:health">
           <div class="flex items-center justify-between gap-3 flex-wrap">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/30">

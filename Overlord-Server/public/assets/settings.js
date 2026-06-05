@@ -124,7 +124,7 @@ function formatDate(timestamp) {
 }
 
 function canManageClientBans(role) {
-  return role === "admin" || role === "operator";
+  return userHas("network:manage-bans");
 }
 
 function isAdmin(role) {
@@ -133,6 +133,12 @@ function isAdmin(role) {
 
 function userHas(perm) {
   return !!currentUser?.permissions?.includes(perm);
+}
+
+function requireUiPermission(perm, message = "You do not have permission for this setting.") {
+  if (userHas(perm)) return true;
+  showMessage(message, "error");
+  return false;
 }
 
 function applyPermissionVisibility() {
@@ -162,6 +168,91 @@ function applyPermissionVisibility() {
     }
     label.classList.toggle("hidden", !hasVisibleLink);
   }
+}
+
+async function renderPermissionsOverview() {
+  const container = document.getElementById("settings-permissions-summary");
+  if (!container || !currentUser) return;
+
+  const granted = new Set(currentUser.permissions || []);
+  let catalog = [];
+  try {
+    const res = await fetch("/api/permissions", { credentials: "include" });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      catalog = Array.isArray(data.permissions) ? data.permissions : [];
+    }
+  } catch {}
+
+  const byId = new Map(catalog.map((perm) => [perm.id, perm.description]));
+  const groups = [
+    {
+      title: "User Administration",
+      icon: "fa-users-gear",
+      perms: ["users:manage", "audit:view"],
+    },
+    {
+      title: "Client Operations",
+      icon: "fa-desktop",
+      perms: [
+        "clients:control",
+        "clients:build",
+        "clients:metadata",
+        "clients:disconnect",
+        "clients:reconnect",
+        "clients:uninstall",
+        "clients:elevate",
+        "clients:winre",
+      ],
+    },
+    {
+      title: "System Settings",
+      icon: "fa-sliders",
+      perms: [
+        "system:security",
+        "system:tls",
+        "system:registration",
+        "system:notifications",
+        "system:chat",
+        "system:appearance",
+        "system:thumbnails",
+        "system:build-limits",
+        "system:export-import",
+        "system:health",
+        "system:health:manage",
+        "system:profiler",
+      ],
+    },
+  ];
+
+  container.innerHTML = groups
+    .map((group) => {
+      const rows = group.perms
+        .map((perm) => {
+          const has = granted.has(perm);
+          return `
+            <div class="flex items-start justify-between gap-3 rounded bg-slate-950/70 border border-slate-800 px-3 py-2">
+              <div class="min-w-0">
+                <div class="font-mono text-xs ${has ? "text-slate-100" : "text-slate-500"}">${escapeHtml(perm)}</div>
+                <div class="text-[11px] text-slate-500 leading-snug">${escapeHtml(byId.get(perm) || "")}</div>
+              </div>
+              <span class="shrink-0 text-xs ${has ? "text-emerald-300" : "text-slate-600"}">
+                <i class="fa-solid ${has ? "fa-circle-check" : "fa-circle-minus"}"></i>
+              </span>
+            </div>
+          `;
+        })
+        .join("");
+      return `
+        <div class="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+          <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+            <i class="fa-solid ${group.icon} text-violet-400"></i>${escapeHtml(group.title)}
+          </h3>
+          <div class="space-y-2">${rows}</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function getPasswordRequirementsText() {
@@ -256,7 +347,7 @@ function applySecurityForm() {
 async function loadSecurityPolicy() {
   if (!currentUser) return;
 
-  if (!isAdmin(currentUser.role)) {
+  if (!userHas("system:security")) {
     securityPermissionNote.classList.remove("hidden");
     setSecurityFormDisabled(true);
     securityConfig = {
@@ -301,7 +392,7 @@ function applyTlsForm() {
 async function loadTlsSettings() {
   if (!currentUser) return;
 
-  if (!isAdmin(currentUser.role)) {
+  if (!userHas("system:tls")) {
     tlsPermissionNote.classList.remove("hidden");
     setTlsFormDisabled(true);
     tlsConfig = {
@@ -559,8 +650,7 @@ function savePrefs(event) {
 
 async function saveSecurityPolicy(event) {
   event.preventDefault();
-  if (!isAdmin(currentUser?.role)) {
-    showMessage("Admin role required.", "error");
+  if (!requireUiPermission("system:security", "Security policy permission required.")) {
     return;
   }
 
@@ -598,8 +688,7 @@ async function saveSecurityPolicy(event) {
 
 async function saveTlsSettings(event) {
   event.preventDefault();
-  if (!isAdmin(currentUser?.role)) {
-    showMessage("Admin role required.", "error");
+  if (!requireUiPermission("system:tls", "TLS settings permission required.")) {
     return;
   }
 
@@ -633,8 +722,7 @@ async function saveTlsSettings(event) {
 }
 
 async function runCertbotAutoSetup() {
-  if (!isAdmin(currentUser?.role)) {
-    showMessage("Admin role required.", "error");
+  if (!requireUiPermission("system:tls", "TLS settings permission required.")) {
     return;
   }
 
@@ -1079,7 +1167,7 @@ function initSettingsSidebar() {
 async function loadAppearanceSettings() {
   if (!currentUser) return;
 
-  if (!isAdmin(currentUser.role)) {
+  if (!userHas("system:appearance")) {
     if (appearancePermissionNote) appearancePermissionNote.classList.remove("hidden");
     if (appearanceCustomCssInput) appearanceCustomCssInput.disabled = true;
     if (appearanceSaveBtn) appearanceSaveBtn.disabled = true;
@@ -1104,8 +1192,7 @@ async function loadAppearanceSettings() {
 
 async function saveAppearanceSettings(event) {
   event.preventDefault();
-  if (!isAdmin(currentUser?.role)) {
-    showMessage("Admin role required.", "error");
+  if (!requireUiPermission("system:appearance", "Appearance settings permission required.")) {
     return;
   }
 
@@ -1136,7 +1223,7 @@ const chatSettingsForm = document.getElementById("chat-settings-form");
 const chatRetentionDaysInput = document.getElementById("chat-retention-days");
 
 async function loadChatSettings() {
-  if (!isAdmin(currentUser?.role)) return;
+  if (!userHas("system:chat")) return;
   if (chatSettingsSection) chatSettingsSection.classList.remove("hidden");
   try {
     const res = await fetch("/api/settings/chat", { credentials: "include" });
@@ -1151,8 +1238,7 @@ async function loadChatSettings() {
 
 async function saveChatSettings(event) {
   event.preventDefault();
-  if (!isAdmin(currentUser?.role)) {
-    showMessage("Admin role required.", "error");
+  if (!requireUiPermission("system:chat", "Team chat settings permission required.")) {
     return;
   }
 
@@ -1198,6 +1284,10 @@ function showExportImportMessage(text, type = "ok") {
 }
 
 async function exportSettings() {
+  if (!requireUiPermission("system:export-import", "Export/import settings permission required.")) {
+    return;
+  }
+
   try {
     const res = await fetch("/api/settings/export", { credentials: "include" });
     if (!res.ok) {
@@ -1227,6 +1317,11 @@ async function exportSettings() {
 }
 
 async function importSettings(event) {
+  if (!requireUiPermission("system:export-import", "Export/import settings permission required.")) {
+    event.target.value = "";
+    return;
+  }
+
   const file = event.target.files?.[0];
   if (!file) return;
 
@@ -1486,6 +1581,8 @@ async function handleRemoveInactiveSessions() {
 // ── Registration Settings ──────────────────────────────────────────────────
 
 async function loadRegistrationSettings() {
+  if (!userHas("system:registration")) return;
+
   try {
     const [regRes, groupsRes] = await Promise.all([
       fetch("/api/settings/registration", { credentials: "include" }),
@@ -1522,8 +1619,8 @@ async function loadRegistrationSettings() {
     }
 
     updateRegSubsections(reg.mode || "off");
-    if (reg.mode === "key") loadRegistrationKeys();
-    if (reg.mode === "approval") loadPendingRegistrations();
+    if (reg.mode === "key" && userHas("users:manage")) loadRegistrationKeys();
+    if (reg.mode === "approval" && userHas("users:manage")) loadPendingRegistrations();
   } catch (e) {
     console.error("Failed to load registration settings", e);
   }
@@ -1532,8 +1629,8 @@ async function loadRegistrationSettings() {
 function updateRegSubsections(mode) {
   const keySection = document.getElementById("reg-key-section");
   const pendingSection = document.getElementById("reg-pending-section");
-  if (keySection) keySection.classList.toggle("hidden", mode !== "key");
-  if (pendingSection) pendingSection.classList.toggle("hidden", mode !== "approval");
+  if (keySection) keySection.classList.toggle("hidden", mode !== "key" || !userHas("users:manage"));
+  if (pendingSection) pendingSection.classList.toggle("hidden", mode !== "approval" || !userHas("users:manage"));
 }
 
 function showRegMsg(text, type) {
@@ -1547,6 +1644,10 @@ function showRegMsg(text, type) {
 
 async function saveRegistrationSettings(e) {
   e.preventDefault();
+  if (!requireUiPermission("system:registration", "Registration settings permission required.")) {
+    return;
+  }
+
   const mode = document.getElementById("reg-mode")?.value;
   const defaultRole = document.getElementById("reg-default-role")?.value;
   const maxUsersTotal = Number(document.getElementById("reg-max-users")?.value) || 0;
@@ -1568,14 +1669,15 @@ async function saveRegistrationSettings(e) {
     }
     showRegMsg("Registration settings saved.", "success");
     updateRegSubsections(mode);
-    if (mode === "key") loadRegistrationKeys();
-    if (mode === "approval") loadPendingRegistrations();
+    if (mode === "key" && userHas("users:manage")) loadRegistrationKeys();
+    if (mode === "approval" && userHas("users:manage")) loadPendingRegistrations();
   } catch {
     showRegMsg("Network error.", "error");
   }
 }
 
 async function loadRegistrationKeys() {
+  if (!userHas("users:manage")) return;
   const tbody = document.getElementById("reg-keys-tbody");
   if (!tbody) return;
   try {
@@ -1608,6 +1710,10 @@ async function loadRegistrationKeys() {
 }
 
 async function generateRegistrationKeys() {
+  if (!requireUiPermission("users:manage", "User management permission required to generate registration keys.")) {
+    return;
+  }
+
   const count = Number(document.getElementById("reg-key-count")?.value) || 1;
   const label = document.getElementById("reg-key-label")?.value || undefined;
   const expiresInHours = Number(document.getElementById("reg-key-expires")?.value) || undefined;
@@ -1631,6 +1737,10 @@ async function generateRegistrationKeys() {
 }
 
 async function deleteRegistrationKey(keyId) {
+  if (!requireUiPermission("users:manage", "User management permission required to delete registration keys.")) {
+    return;
+  }
+
   try {
     const res = await fetch(`/api/registration/keys/${keyId}`, {
       method: "DELETE",
@@ -1641,6 +1751,7 @@ async function deleteRegistrationKey(keyId) {
 }
 
 async function loadPendingRegistrations() {
+  if (!userHas("users:manage")) return;
   const tbody = document.getElementById("reg-pending-tbody");
   const emptyEl = document.getElementById("reg-pending-empty");
   if (!tbody) return;
@@ -1673,6 +1784,10 @@ async function loadPendingRegistrations() {
 }
 
 async function handlePendingAction(id, action) {
+  if (!requireUiPermission("users:manage", "User management permission required to approve registrations.")) {
+    return;
+  }
+
   try {
     const res = await fetch(`/api/registration/pending/${id}/${action}`, {
       method: "POST",
@@ -1697,8 +1812,8 @@ function initRegistrationHandlers() {
   const modeEl = document.getElementById("reg-mode");
   if (modeEl) modeEl.addEventListener("change", () => {
     updateRegSubsections(modeEl.value);
-    if (modeEl.value === "key") loadRegistrationKeys();
-    if (modeEl.value === "approval") loadPendingRegistrations();
+    if (modeEl.value === "key" && userHas("users:manage")) loadRegistrationKeys();
+    if (modeEl.value === "approval" && userHas("users:manage")) loadPendingRegistrations();
   });
 
   const genBtn = document.getElementById("reg-key-generate-btn");
@@ -1726,6 +1841,8 @@ function initRegistrationHandlers() {
 // ── Build Rate Limit Settings ──────────────────────────────────────────────
 
 async function loadBuildRateLimitSettings() {
+  if (!userHas("system:build-limits")) return;
+
   try {
     const res = await fetch("/api/settings/build-rate-limit", { credentials: "include" });
     if (!res.ok) return;
@@ -1753,6 +1870,10 @@ function showBrlMsg(text, type) {
 
 async function saveBuildRateLimitSettings(e) {
   e.preventDefault();
+  if (!requireUiPermission("system:build-limits", "Build rate limit settings permission required.")) {
+    return;
+  }
+
   const maxBuildsPerHour = Number(document.getElementById("brl-max-per-hour")?.value) || 5;
   const maxConcurrentPerUser = Number(document.getElementById("brl-max-concurrent-user")?.value) || 1;
   const globalMaxConcurrent = Number(document.getElementById("brl-global-concurrent")?.value) || 3;
@@ -1783,6 +1904,8 @@ function initBuildRateLimitHandlers() {
 // ── Thumbnail Settings ────────────────────────────────────────────────────
 
 async function loadThumbnailSettings() {
+  if (!userHas("system:thumbnails")) return;
+
   try {
     const res = await fetch("/api/settings/thumbnails", { credentials: "include" });
     if (!res.ok) return;
@@ -1808,6 +1931,10 @@ function showThumbnailsMsg(text, type) {
 
 async function saveThumbnailSettings(e) {
   e.preventDefault();
+  if (!requireUiPermission("system:thumbnails", "Thumbnail settings permission required.")) {
+    return;
+  }
+
   const dashboardEnabled = !!document.getElementById("thumb-dashboard-enabled")?.checked;
   const wallEnabled = !!document.getElementById("thumb-wall-enabled")?.checked;
   try {
@@ -1858,6 +1985,8 @@ function formatUptime(totalSeconds) {
 let latestServerCpuProfile = null;
 
 async function loadHealthStats() {
+  if (!userHas("system:health")) return;
+
   const loading = document.getElementById("health-loading");
   const content = document.getElementById("health-content");
   if (loading) { loading.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading...'; loading.classList.remove("hidden"); }
@@ -2060,6 +2189,10 @@ function renderServerProfileResults(data) {
 }
 
 async function runServerProfile() {
+  if (!requireUiPermission("system:profiler", "Server profiler permission required.")) {
+    return;
+  }
+
   const btn = document.getElementById("server-profile-btn");
   const durationEl = document.getElementById("server-profile-duration");
   const durationMs = Number(durationEl?.value || 5000);
@@ -2113,6 +2246,10 @@ function downloadServerCpuProfile() {
 }
 
 async function runGC() {
+  if (!requireUiPermission("system:health:manage", "Server health maintenance permission required.")) {
+    return;
+  }
+
   const gcBtn = document.getElementById("health-gc-btn");
   const msgEl = document.getElementById("health-gc-message");
   if (gcBtn) gcBtn.disabled = true;
@@ -2139,6 +2276,14 @@ function initHealthHandlers() {
   const gcBtn = document.getElementById("health-gc-btn");
   const profileBtn = document.getElementById("server-profile-btn");
   const downloadProfileBtn = document.getElementById("server-profile-download-btn");
+  if (gcBtn && !userHas("system:health:manage")) {
+    gcBtn.disabled = true;
+    gcBtn.title = "Requires system:health:manage";
+  }
+  if (profileBtn && !userHas("system:profiler")) {
+    profileBtn.disabled = true;
+    profileBtn.title = "Requires system:profiler";
+  }
   if (refreshBtn) refreshBtn.addEventListener("click", loadHealthStats);
   if (gcBtn) gcBtn.addEventListener("click", runGC);
   if (profileBtn) profileBtn.addEventListener("click", runServerProfile);
@@ -2165,14 +2310,24 @@ async function init() {
     await loadChatSettings();
     await loadBannedIps();
 
-    if (userHas("system:configure")) {
+    if (userHas("users:manage")) {
+      await renderPermissionsOverview();
+    }
+
+    if (userHas("system:registration")) {
       await loadRegistrationSettings();
-      await loadBuildRateLimitSettings();
-      await loadThumbnailSettings();
-      await loadHealthStats();
       initRegistrationHandlers();
+    }
+    if (userHas("system:build-limits")) {
+      await loadBuildRateLimitSettings();
       initBuildRateLimitHandlers();
+    }
+    if (userHas("system:thumbnails")) {
+      await loadThumbnailSettings();
       initThumbnailHandlers();
+    }
+    if (userHas("system:health")) {
+      await loadHealthStats();
       initHealthHandlers();
     }
 

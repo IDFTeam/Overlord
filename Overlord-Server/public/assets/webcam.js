@@ -32,6 +32,9 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
   const ctx = canvas.getContext("2d");
   const webrtcMode = document.getElementById("webrtcMode");
   const webrtcVideo = document.getElementById("webrtcVideo");
+  const audioCtrl = document.getElementById("audioCtrl");
+  const audioTransport = document.getElementById("audioTransport");
+  const webrtcAudio = document.getElementById("webrtcAudio");
   let whepClient = null;
   let p2pClient = null;
   function getWebrtcMode() {
@@ -62,6 +65,204 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
   let prefersH264 = typeof VideoDecoder === "function";
   let savedCameraIndex = null;
 
+  /* ── Remote system audio while viewing webcam ── */
+  const AUDIO_SAMPLE_RATE = 16000;
+  const AUDIO_PLAYBACK_FRAME = 512;
+  const AUDIO_MAX_BUFFER_MS = 120;
+  let audioWs = null;
+  let audioPlayCtx = null;
+  let audioProcessorNode = null;
+  let audioChunks = [];
+  let audioChunkOffset = 0;
+  let audioWhep = null;
+  let audioP2P = null;
+
+  function getAudioTransport() {
+    return audioTransport ? String(audioTransport.value || "off") : "off";
+  }
+
+  function audioResampleInt16ToFloat32(srcInt16, srcRate, dstRate) {
+    if (!srcInt16 || srcInt16.length === 0) return new Float32Array(0);
+    if (srcRate === dstRate) {
+      const out = new Float32Array(srcInt16.length);
+      for (let i = 0; i < srcInt16.length; i++) out[i] = srcInt16[i] / 0x8000;
+      return out;
+    }
+    const outLength = Math.max(1, Math.round((srcInt16.length * dstRate) / srcRate));
+    const out = new Float32Array(outLength);
+    const step = srcRate / dstRate;
+    for (let i = 0; i < outLength; i++) {
+      const srcPos = i * step;
+      const i0 = Math.floor(srcPos);
+      const i1 = Math.min(i0 + 1, srcInt16.length - 1);
+      const frac = srcPos - i0;
+      out[i] = (srcInt16[i0] * (1 - frac) + srcInt16[i1] * frac) / 0x8000;
+    }
+    return out;
+  }
+
+  function initAudioPlayback() {
+    if (!audioPlayCtx) {
+      audioPlayCtx = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE, latencyHint: "interactive" });
+    }
+    if (!audioProcessorNode) {
+      audioProcessorNode = audioPlayCtx.createScriptProcessor(AUDIO_PLAYBACK_FRAME, 1, 1);
+      audioProcessorNode.onaudioprocess = function (event) {
+        const out = event.outputBuffer.getChannelData(0);
+        out.fill(0);
+        let writeIndex = 0;
+        while (writeIndex < out.length && audioChunks.length > 0) {
+          const head = audioChunks[0];
+          const remaining = head.length - audioChunkOffset;
+          if (remaining <= 0) { audioChunks.shift(); audioChunkOffset = 0; continue; }
+          const take = Math.min(out.length - writeIndex, remaining);
+          out.set(head.subarray(audioChunkOffset, audioChunkOffset + take), writeIndex);
+          writeIndex += take;
+          audioChunkOffset += take;
+          if (audioChunkOffset >= head.length) { audioChunks.shift(); audioChunkOffset = 0; }
+        }
+      };
+      audioProcessorNode.connect(audioPlayCtx.destination);
+    }
+  }
+
+  function appendAudioPcm(binary) {
+    if (!audioPlayCtx) initAudioPlayback();
+    const samples = Math.floor(binary.byteLength / 2);
+    if (samples <= 0) return;
+    const src = new Int16Array(binary.buffer, binary.byteOffset, samples);
+    const chunk = audioResampleInt16ToFloat32(src, AUDIO_SAMPLE_RATE, audioPlayCtx?.sampleRate || AUDIO_SAMPLE_RATE);
+    if (chunk.length === 0) return;
+    audioChunks.push(chunk);
+    let buffered = -audioChunkOffset;
+    for (const c of audioChunks) buffered += c.length;
+    const rate = audioPlayCtx?.sampleRate || AUDIO_SAMPLE_RATE;
+    const max = Math.max(AUDIO_PLAYBACK_FRAME, Math.round(rate * (AUDIO_MAX_BUFFER_MS / 1000)));
+    while (buffered > max && audioChunks.length > 0) {
+      const dropped = audioChunks.shift();
+      buffered -= dropped?.length || 0;
+      audioChunkOffset = 0;
+    }
+  }
+
+  async function stopAudioWebrtc() {
+    const w = audioWhep;
+    audioWhep = null;
+    if (w) { try { await w.stop(); } catch {} }
+    const p = audioP2P;
+    audioP2P = null;
+    if (p) { try { await p.stop(); } catch {} }
+  }
+
+  async function startAudioWhep(whepPath) {
+    await stopAudioWebrtc();
+    audioWhep = new WhepClient({
+      whepPath,
+      audioEl: webrtcAudio,
+      onState: (s) => console.debug("webcam-audio-webrtc[Relayed]: state", s),
+    });
+    try {
+      await audioWhep.start();
+    } catch (err) {
+      console.warn("webcam audio: WHEP start failed", err);
+      audioWhep = null;
+    }
+  }
+
+  function startAudioP2P() {
+    if (!audioWs || audioWs.readyState !== WebSocket.OPEN) return;
+    audioP2P = new P2PClient({
+      audioEl: webrtcAudio,
+      send: (msg) => {
+        if (audioWs && audioWs.readyState === WebSocket.OPEN) {
+          audioWs.send(JSON.stringify(msg));
+        }
+      },
+      onState: (s) => console.debug("webcam-audio-webrtc[P2P]: state", s),
+    });
+    audioP2P.start().catch((err) => {
+      console.warn("webcam audio: P2P start failed", err);
+      audioP2P = null;
+    });
+  }
+
+  function cleanupAudio(uncheckBox) {
+    if (audioProcessorNode) {
+      audioProcessorNode.disconnect();
+      audioProcessorNode.onaudioprocess = null;
+      audioProcessorNode = null;
+    }
+    if (audioPlayCtx) {
+      audioPlayCtx.close().catch(function () {});
+      audioPlayCtx = null;
+    }
+    audioChunks = [];
+    audioChunkOffset = 0;
+    audioWs = null;
+    if (uncheckBox && audioCtrl) audioCtrl.checked = false;
+  }
+
+  function connectAudio() {
+    if (audioWs && audioWs.readyState === WebSocket.OPEN) return;
+    const mode = getAudioTransport();
+    if (mode === "off") {
+      initAudioPlayback();
+      if (audioPlayCtx?.state === "suspended") audioPlayCtx.resume();
+    }
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const wsAudio = new WebSocket(`${proto}//${location.host}/api/clients/${encodeURIComponent(clientId)}/desktop-audio/ws`);
+    audioWs = wsAudio;
+    wsAudio.binaryType = "arraybuffer";
+    wsAudio.onopen = function () {
+      const start = { type: "start", source: "system" };
+      if (mode === "relayed") start.webrtc = true;
+      try { wsAudio.send(JSON.stringify(start)); } catch (err) {
+        console.warn("webcam audio: send start failed", err);
+        return;
+      }
+      if (mode === "p2p") startAudioP2P();
+    };
+    wsAudio.onmessage = function (ev) {
+      if (typeof ev.data === "string") {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        if (!msg || typeof msg.type !== "string") return;
+        if (msg.type === "webrtc_ready" && typeof msg.whepPath === "string") {
+          startAudioWhep(msg.whepPath);
+          return;
+        }
+        if (msg.type === "webrtc_p2p_answer" && typeof msg.sdp === "string") {
+          if (audioP2P) audioP2P.onAnswer(msg.sdp);
+          return;
+        }
+        if (msg.type === "webrtc_p2p_ice") {
+          if (audioP2P) audioP2P.onRemoteCandidate(msg);
+          return;
+        }
+        return;
+      }
+      const bytes = new Uint8Array(ev.data);
+      if (mode === "off" && bytes.byteLength > 1) appendAudioPcm(bytes);
+    };
+    wsAudio.onclose = function () {
+      if (audioWs === wsAudio) {
+        stopAudioWebrtc();
+        cleanupAudio(false);
+      }
+    };
+    wsAudio.onerror = function () {};
+  }
+
+  function disconnectAudio(uncheckBox = true) {
+    if (audioWs) {
+      try { audioWs.send(JSON.stringify({ type: "stop" })); } catch {}
+      try { audioWs.close(); } catch {}
+      audioWs = null;
+    }
+    stopAudioWebrtc();
+    cleanupAudio(uncheckBox);
+  }
+
   function setSelectValue(select, value) {
     if (!select || value === undefined || value === null) return false;
     const normalized = String(value);
@@ -87,6 +288,8 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
     if (fpsInput && settings.fps !== undefined) fpsInput.value = String(settings.fps);
     if (qualitySlider && settings.quality !== undefined) qualitySlider.value = String(settings.quality);
     setSelectValue(webrtcMode, settings.webrtcMode);
+    setSelectValue(audioTransport, settings.audioTransport);
+    if (audioCtrl && typeof settings.audio === "boolean") audioCtrl.checked = settings.audio;
     if (typeof settings.preferH264 === "boolean") {
       prefersH264 = settings.preferH264 && typeof VideoDecoder === "function";
     }
@@ -100,6 +303,8 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
       quality: Number(qualitySlider?.value || 90),
       preferH264: !!prefersH264,
       webrtcMode: getWebrtcMode(),
+      audio: !!audioCtrl?.checked,
+      audioTransport: getAudioTransport(),
     };
   }
 
@@ -574,6 +779,9 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
     } else {
       send("webcam_start");
     }
+    if (audioCtrl && audioCtrl.checked) {
+      connectAudio();
+    }
     setStreamState("starting", "Starting");
   });
 
@@ -581,6 +789,7 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
     desiredStreaming = false;
     send("webcam_stop");
     stopAllWebrtc();
+    disconnectAudio();
     setStreamState("stopping", "Stopping");
     setTimeout(() => {
       if (streamState === "stopping") {
@@ -589,13 +798,16 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
     }, 300);
   });
 
-  window.addEventListener("beforeunload", () => {
+  function stopOnExit() {
     sharedSettingsSaver.saveNow();
     if (ws && ws.readyState === WebSocket.OPEN) {
       send("webcam_stop");
     }
+    disconnectAudio();
     destroyVideoDecoder();
-  });
+  }
+  window.addEventListener("beforeunload", stopOnExit);
+  window.addEventListener("pagehide", stopOnExit);
 
   refreshCameras.addEventListener("click", () => {
     requestCameraList();
@@ -648,6 +860,27 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
 
   if (webrtcMode) {
     webrtcMode.addEventListener("change", () => {
+      sharedSettingsSaver.scheduleSave();
+    });
+  }
+
+  if (audioCtrl) {
+    audioCtrl.addEventListener("change", () => {
+      if (audioCtrl.checked) {
+        connectAudio();
+      } else {
+        disconnectAudio();
+      }
+      sharedSettingsSaver.scheduleSave();
+    });
+  }
+
+  if (audioTransport) {
+    audioTransport.addEventListener("change", () => {
+      if (audioCtrl && audioCtrl.checked) {
+        disconnectAudio(false);
+        connectAudio();
+      }
       sharedSettingsSaver.scheduleSave();
     });
   }

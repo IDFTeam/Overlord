@@ -303,6 +303,8 @@ function sanitizeSharedUiSettings(scope: string, raw: unknown): Record<string, u
   } else if (scope === "webcam") {
     assignIfDefined(out, "camera", pickSteppedNumber(input.camera, 0, 63));
     assignIfDefined(out, "fps", pickSteppedNumber(input.fps, 1, 120));
+    assignIfDefined(out, "audio", pickBoolean(input.audio));
+    assignIfDefined(out, "audioTransport", pickString(input.audioTransport, ["off", "p2p", "relayed"]));
   }
 
   return out;

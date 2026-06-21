@@ -8,7 +8,9 @@ import {
   getUserById,
   setUserGroups,
 } from "../../users";
+import { createHttpFetchHandler } from "../http-dispatch";
 import { handlePermissionGroupsRoutes } from "./permission-groups-routes";
+import { handleUsersRoutes } from "./users-routes";
 
 const PASSWORD = "Aa1!PgRoutesTestPassword";
 
@@ -41,6 +43,28 @@ function call(method: string, path: string, token: string | null, body?: unknown
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
     url,
+    mockServer,
+  );
+}
+
+function callThroughServerRoutes(method: string, path: string, token: string | null, body?: unknown) {
+  const url = new URL(`https://localhost${path}`);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const handler = createHttpFetchHandler({
+    metrics: { withHttpMetrics: (fn) => fn() },
+    CORS_HEADERS: {},
+    routes: [
+      (req, routeUrl, server) => handleUsersRoutes(req, routeUrl, server as typeof mockServer),
+      (req, routeUrl, server) => handlePermissionGroupsRoutes(req, routeUrl, server as typeof mockServer),
+    ],
+  });
+  return handler(
+    new Request(url, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
     mockServer,
   );
 }
@@ -204,6 +228,27 @@ describe("permission-groups routes — user assignments", () => {
     const getRes = await call("GET", `/api/users/${target.user.id}/permission-groups`, admin.token);
     const body = await getRes!.json();
     expect(body.groupIds).toEqual([group.id]);
+  });
+
+  test("server route order lets empty user group assignment reach permission-groups handler", async () => {
+    const admin = await tempUser("admin");
+    const target = await tempUser("viewer");
+
+    const putRes = await callThroughServerRoutes(
+      "PUT",
+      `/api/users/${target.user.id}/permission-groups`,
+      admin.token,
+      { groupIds: [] },
+    );
+    expect(putRes.status).toBe(200);
+
+    const getRes = await callThroughServerRoutes(
+      "GET",
+      `/api/users/${target.user.id}/permission-groups`,
+      admin.token,
+    );
+    expect(getRes.status).toBe(200);
+    await expect(getRes.json()).resolves.toEqual({ groupIds: [] });
   });
 
   test("PUT /api/users/:id/extra-permissions sanitizes unknown perms", async () => {

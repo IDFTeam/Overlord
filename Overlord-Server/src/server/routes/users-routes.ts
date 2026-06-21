@@ -607,7 +607,7 @@ export async function handleUsersRoutes(
       });
     }
 
-    return new Response("Not found", { status: 404 });
+    return null;
   } catch (error) {
     if (error instanceof Response) {
       return error;

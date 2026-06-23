@@ -95,6 +95,7 @@ function sentCommandTypes(sent: Uint8Array[]): string[] {
 async function resolvePendingOnce(pendingCommandReplies: Map<string, any>) {
   const first = pendingCommandReplies.entries().next().value;
   expect(first).toBeTruthy();
+  if (!first) throw new Error("Expected one pending command reply");
   const [cmdId, pending] = first;
   clearTimeout(pending.timeout);
   pending.resolve({ ok: true, message: "ok" });

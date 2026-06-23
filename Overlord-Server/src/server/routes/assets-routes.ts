@@ -23,6 +23,16 @@ function acceptsGzip(req: Request): boolean {
 const STATIC_ASSET_CACHE = "public, max-age=31536000, immutable";
 const MUTABLE_ASSET_CACHE = "public, max-age=86400, stale-while-revalidate=604800";
 const NO_CACHE = "no-cache";
+const MAX_GZIP_CACHE_ENTRIES = 128;
+const MAX_GZIP_CACHE_BYTES = 16 * 1024 * 1024;
+
+type GzipCacheEntry = {
+  bytes: ArrayBuffer;
+  size: number;
+};
+
+const gzipAssetCache = new Map<string, GzipCacheEntry>();
+let gzipAssetCacheBytes = 0;
 
 function assetCacheControl(relativePath: string): string {
   if (relativePath === "custom.css") return NO_CACHE;
@@ -36,16 +46,56 @@ function assetCacheControl(relativePath: string): string {
   return MUTABLE_ASSET_CACHE;
 }
 
+function toExactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function rememberCompressedAsset(cacheKey: string, bytes: Uint8Array): ArrayBuffer {
+  const existing = gzipAssetCache.get(cacheKey);
+  if (existing) {
+    gzipAssetCacheBytes -= existing.size;
+  }
+
+  const cachedBytes = toExactArrayBuffer(bytes);
+  gzipAssetCache.set(cacheKey, { bytes: cachedBytes, size: bytes.byteLength });
+  gzipAssetCacheBytes += bytes.byteLength;
+
+  while (
+    gzipAssetCache.size > MAX_GZIP_CACHE_ENTRIES ||
+    gzipAssetCacheBytes > MAX_GZIP_CACHE_BYTES
+  ) {
+    const oldestKey = gzipAssetCache.keys().next().value;
+    if (!oldestKey) break;
+    const oldest = gzipAssetCache.get(oldestKey);
+    if (oldest) gzipAssetCacheBytes -= oldest.size;
+    gzipAssetCache.delete(oldestKey);
+  }
+
+  return cachedBytes;
+}
+
 async function compressedResponse(
-  req: Request,
-  body: Uint8Array | ArrayBuffer,
+  cacheKey: string,
+  file: ReturnType<typeof Bun.file>,
   headers: Record<string, string>,
 ): Promise<Response> {
-  if (!isCompressible(headers["Content-Type"] ?? "") || !acceptsGzip(req) || body.byteLength < 1024) {
-    return new Response(body as BodyInit, { headers });
+  const cached = gzipAssetCache.get(cacheKey);
+  if (cached) {
+    gzipAssetCache.delete(cacheKey);
+    gzipAssetCache.set(cacheKey, cached);
+    return new Response(cached.bytes, {
+      headers: { ...headers, "Content-Encoding": "gzip", "Vary": "Accept-Encoding" },
+    });
   }
-  const compressed = Bun.gzipSync(new Uint8Array(body instanceof ArrayBuffer ? body : body));
-  return new Response(compressed, {
+
+  const body = await file.arrayBuffer();
+  if (body.byteLength < 1024) {
+    return new Response(body, { headers });
+  }
+
+  const compressed = Bun.gzipSync(new Uint8Array(body));
+  const compressedBody = rememberCompressedAsset(cacheKey, compressed);
+  return new Response(compressedBody, {
     headers: { ...headers, "Content-Encoding": "gzip", "Vary": "Accept-Encoding" },
   });
 }
@@ -121,8 +171,7 @@ export async function handleAssetsRoutes(
     }
 
     if (isCompressible(contentType) && acceptsGzip(req)) {
-      const bytes = await file.arrayBuffer();
-      return compressedResponse(req, bytes, headers);
+      return compressedResponse(`${resolvedPath}:${etag}`, file, headers);
     }
     return new Response(file, { headers });
   }

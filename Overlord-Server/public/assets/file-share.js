@@ -1,3 +1,5 @@
+import { escapeHtml, formatBytes, timeAgo } from "./format.js";
+
 const fileList = document.getElementById("file-list");
 const uploadSection = document.getElementById("upload-section");
 const uploadForm = document.getElementById("upload-form");
@@ -5,32 +7,6 @@ const uploadInfinite = document.getElementById("upload-infinite");
 const uploadMaxDownloads = document.getElementById("upload-max-downloads");
 
 let currentUser = null;
-
-function formatBytes(bytes) {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
-
-function timeAgo(ts) {
-  const seconds = Math.floor((Date.now() - ts) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(ts).toLocaleDateString();
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 function getDownloadUrl(fileId) {
   return `${window.location.origin}/api/file-share/${fileId}/download`;

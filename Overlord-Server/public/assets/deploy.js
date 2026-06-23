@@ -1,3 +1,5 @@
+import { escapeHtml, formatBytes } from "./format.js";
+
 const clientList = document.getElementById("client-list");
 const clientSearch = document.getElementById("client-search");
 const osFilter = document.getElementById("os-filter");
@@ -273,20 +275,6 @@ function setOsBadge(os) {
   osBadge.classList.remove("border-emerald-600", "text-emerald-300", "border-amber-600", "text-amber-300");
   if (os === "unknown") return;
   osBadge.classList.add("border-emerald-600", "text-emerald-300");
-}
-
-function formatBytes(bytes) {
-  const value = Number(bytes) || 0;
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB`;
-  return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 clientSearch.addEventListener("input", filterAndRenderClients);

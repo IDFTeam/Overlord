@@ -2047,6 +2047,14 @@ loadCurrentUser();
 
 // console easter egg
 (function () {
+  const runWhenIdle = (fn) => {
+    if ("requestIdleCallback" in window) {
+      window.requestIdleCallback(fn, { timeout: 5000 });
+      return;
+    }
+    window.addEventListener("load", () => setTimeout(fn, 1500), { once: true });
+  };
+
   const consoleimg = {
     load: function (src, { size = 320, color = "transparent" } = {}) {
       const reader = new FileReader();
@@ -2072,5 +2080,5 @@ loadCurrentUser();
         .catch((err) => console.warn(err.message));
     },
   };
-  consoleimg.load("/assets/console.gif", { size: 320, color: "transparent" });
+  runWhenIdle(() => consoleimg.load("/assets/console.gif", { size: 320, color: "transparent" }));
 })();

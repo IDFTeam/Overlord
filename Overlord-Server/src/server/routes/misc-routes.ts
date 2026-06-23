@@ -261,8 +261,8 @@ function pickSteppedNumber(
   return Math.round(clamped / step) * step;
 }
 
-function assignIfDefined<T extends Record<string, unknown>>(
-  target: T,
+function assignIfDefined(
+  target: Record<string, unknown>,
   key: string,
   value: unknown,
 ): void {

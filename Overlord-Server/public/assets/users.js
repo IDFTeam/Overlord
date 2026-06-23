@@ -1,6 +1,8 @@
 let currentUser = null;
 let users = [];
 
+import { escapeHtml, formatDate } from "./format.js";
+
 const usersTableBody = document.getElementById("users-table-body");
 const addUserBtn = document.getElementById("add-user-btn");
 const userModal = document.getElementById("user-modal");
@@ -348,17 +350,6 @@ function attachActionListeners() {
 
   usersTableBody.addEventListener("click", listener);
   usersTableBody._actionListener = listener;
-}
-
-function formatDate(timestamp) {
-  const date = new Date(timestamp);
-  return date.toLocaleString();
-}
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function showModal(title) {

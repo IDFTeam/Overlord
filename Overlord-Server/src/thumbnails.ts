@@ -46,6 +46,26 @@ const latestFrames = new Map<string, { bytes: Uint8Array; format: string; captur
 const thumbnailRequests = new Map<string, number>();
 const thumbnailVersionHWM = new Map<string, number>();
 
+type BunImageConstructor = new (
+  bytes: Uint8Array,
+  options?: { autoOrient?: boolean; maxPixels?: number },
+) => {
+  resize(
+    width: number,
+    height: number,
+    options?: { fit?: "inside"; withoutEnlargement?: boolean },
+  ): {
+    webp(options?: { quality?: number }): {
+      bytes(): Promise<ArrayBuffer | Uint8Array>;
+    };
+  };
+};
+
+function getBunImage(): BunImageConstructor | null {
+  const imageCtor = (Bun as unknown as { Image?: BunImageConstructor }).Image;
+  return typeof imageCtor === "function" ? imageCtor : null;
+}
+
 function touchThumbnailLRU(id: string) {
   const existing = thumbnails.get(id);
   if (!existing) return;
@@ -117,11 +137,12 @@ async function buildThumbnailBytes(bytes: Uint8Array, format: string): Promise<U
     return null;
   }
 
-  if (typeof Bun.Image !== "function") {
+  const BunImage = getBunImage();
+  if (!BunImage) {
     return null;
   }
 
-  const output = await new Bun.Image(bytes, {
+  const output = await new BunImage(bytes, {
     autoOrient: true,
     maxPixels: THUMBNAIL_WIDTH * THUMBNAIL_HEIGHT * 16,
   })
@@ -164,7 +185,7 @@ export async function generateThumbnail(id: string): Promise<boolean> {
     }
     return true;
   } catch (err) {
-    if (typeof Bun.Image === "function") {
+    if (getBunImage()) {
       console.error(`[thumbnails] Failed to generate thumbnail for client ${id}:`, err);
     }
     return false;

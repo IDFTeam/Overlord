@@ -572,7 +572,7 @@ export async function compilePluginTypeScript(entryPath: string, outFile: string
     minify: false,
     sourcemap: "none",
     write: false,
-  });
+  } as Parameters<typeof Bun.build>[0]);
   if (!result.success) {
     const logs = result.logs.map((log) => log.message).join("; ");
     throw new Error(`TypeScript build failed for ${pluginId}: ${logs || "unknown error"}`);
@@ -605,7 +605,9 @@ export function normalizePluginNeeds(raw: any): PluginNeeds | undefined {
     const bucket = typeof item.bucket === "string" ? item.bucket.trim() : "";
     if (!FILE_BUCKETS.has(bucket)) continue;
     const accessRaw = Array.isArray(item.access) ? item.access : [];
-    const access = Array.from(new Set(accessRaw.filter((a: any) => typeof a === "string" && FILE_ACCESS.has(a))));
+    const access = Array.from(
+      new Set<string>(accessRaw.filter((a: any): a is string => typeof a === "string" && FILE_ACCESS.has(a))),
+    );
     if (access.length === 0) continue;
     files.push({
       bucket,

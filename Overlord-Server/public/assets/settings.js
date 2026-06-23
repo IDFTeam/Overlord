@@ -5,6 +5,7 @@ import {
   setDesktopNotificationsEnabled,
   requestDesktopNotificationPermission,
 } from "./notify-client.js";
+import { escapeHtml, formatBytes as formatSharedBytes, formatDate as formatSharedDate } from "./format.js";
 
 const PREF_REFRESH_KEY = "overlord_refresh_interval_seconds";
 const NAV_MODE_KEY = "sb_mode";
@@ -119,16 +120,8 @@ function showMessage(text, type = "ok") {
   }
 }
 
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text == null ? "" : String(text);
-  return div.innerHTML;
-}
-
 function formatDate(timestamp) {
-  const ts = Number(timestamp) || 0;
-  if (!ts) return "-";
-  return new Date(ts).toLocaleString();
+  return formatSharedDate(timestamp, "-");
 }
 
 function canManageClientBans(role) {
@@ -2047,11 +2040,7 @@ function initThumbnailHandlers() {
 // ── Server Health ─────────────────────────────────────────────────────────
 
 function formatBytes(bytes) {
-  if (!bytes || bytes <= 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return `${(bytes / Math.pow(k, i)).toFixed(i > 0 ? 1 : 0)} ${sizes[i]}`;
+  return formatSharedBytes(bytes, 1);
 }
 
 function formatUptime(totalSeconds) {

@@ -1076,6 +1076,23 @@ export function listClients(filters: ListFilters): ListResult {
 
   const clientFields =
     `c.id, c.hwid, c.role, c.ip, c.host, c.os, c.arch, c.version, c.user, c.nickname, c.custom_tag as customTag, c.custom_tag_note as customTagNote, c.monitors, c.country, c.last_seen as lastSeen, c.online, c.ping_ms as pingMs, c.bookmarked, c.build_tag as buildTag, c.built_by_user_id as builtByUserId, c.enrollment_status as enrollmentStatus, c.public_key as publicKey, c.key_fingerprint as keyFingerprint, c.cpu, c.gpu, c.ram, c.battery_percent as batteryPercent, c.battery_charging as batteryCharging, CASE WHEN ${webcamAvailableSql} THEN 1 ELSE 0 END as webcamAvailable, c.webcam_devices as webcamDevices, c.is_admin as isAdmin, c.elevation, c.permissions, c.disconnect_reason as disconnectReason, c.disconnect_detail as disconnectDetail, c.group_id as groupId, c.notifications_muted as notificationsMuted, c.deny_reason as denyReason`;
+  const searchFields =
+    `c.id, c.hwid, c.ip, c.host, c.os, c.arch, c.version, c.user, c.nickname, c.custom_tag as customTag, c.custom_tag_note as customTagNote, c.monitors, c.country, c.online, c.build_tag as buildTag, c.cpu, c.gpu, c.ram, g.name as groupName`;
+
+  const fetchClientRowsByIds = (ids: string[]): any[] => {
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => "?").join(",");
+    const fullRows = db
+      .query<any>(
+        `SELECT ${clientFields}, g.name as groupName, g.color as groupColor
+         FROM clients c
+         LEFT JOIN client_groups g ON g.id = c.group_id
+         WHERE c.id IN (${placeholders})`,
+      )
+      .all(...ids);
+    const byId = new Map(fullRows.map((row: any) => [row.id, row]));
+    return ids.map((id) => byId.get(id)).filter(Boolean);
+  };
 
   let rows: any[] | undefined;
   let totalCount = 0;
@@ -1101,6 +1118,10 @@ export function listClients(filters: ListFilters): ListResult {
       if (searchCandidate.sql) {
         searchWhere.push(searchCandidate.sql);
         searchParams.push(...searchCandidate.params);
+      } else {
+        rows = [];
+        totalCount = 0;
+        onlineCount = 0;
       }
     }
 
@@ -1108,7 +1129,7 @@ export function listClients(filters: ListFilters): ListResult {
       const searchWhereSql = searchWhere.length ? `WHERE ${searchWhere.join(" AND ")}` : "";
       const candidates = db
         .query<any>(
-          `SELECT ${clientFields}, g.name as groupName, g.color as groupColor
+          `SELECT ${searchFields}
            FROM clients c
            LEFT JOIN client_groups g ON g.id = c.group_id
            ${searchWhereSql}
@@ -1118,7 +1139,7 @@ export function listClients(filters: ListFilters): ListResult {
       const matches = fuzzySearchClientRows(candidates, search);
       totalCount = matches.length;
       onlineCount = matches.filter((row: any) => row.online === 1).length;
-      rows = matches.slice(offset, offset + pageSize);
+      rows = fetchClientRowsByIds(matches.slice(offset, offset + pageSize).map((row: any) => row.id));
     }
   } else {
     const countJoinSql = needsGroupJoinForFilter ? "LEFT JOIN client_groups g ON g.id = c.group_id" : "";

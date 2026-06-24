@@ -18,7 +18,7 @@ import * as sessionManager from "../../sessions/sessionManager";
 import type { SocketData } from "../../sessions/types";
 import type { ClientInfo } from "../../types";
 import { clearClientSyncState, handleFrame, handleHello, handlePing, handlePong } from "../../wsHandlers";
-import { flushQueuedClientDbUpdates, queueClientDbUpdate } from "../../client-db-sync";
+import { queueClientDbUpdate, scheduleQueuedClientDbFlush } from "../../client-db-sync";
 import { getMaxPayloadLimit, getMessageByteLength, isAllowedClientMessageType } from "../../wsValidation";
 import { stopAllProxiesForClient } from "../socks5-proxy-manager";
 import { verifyBuildToken, isBuildBanned } from "../build-signing";
@@ -668,7 +668,7 @@ export async function handleWebSocketMessage(
         }
 
         await handleHello(infoObj, payload as Hello, ws, ip);
-        flushQueuedClientDbUpdates();
+        scheduleQueuedClientDbFlush();
         clientManager.addClient(infoObj.id, infoObj);
 
         clearThumbnail(resolvedId);
@@ -748,8 +748,9 @@ export async function handleWebSocketMessage(
             }
           }
         }
-        handleFrame(client, payload);
-        try { ws.send(encodeMessage({ type: "frame_ack" })); } catch {}
+        if (handleFrame(client, payload)) {
+          try { ws.send(encodeMessage({ type: "frame_ack" })); } catch {}
+        }
         break;
       case "screenshot_result":
         deps.handleNotificationScreenshotResult(client.id, payload);

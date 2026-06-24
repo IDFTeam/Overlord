@@ -101,6 +101,9 @@ db.run(
   `CREATE INDEX IF NOT EXISTS idx_clients_public_key ON clients(public_key);`,
 );
 db.run(
+  `CREATE INDEX IF NOT EXISTS idx_clients_hwid ON clients(hwid);`,
+);
+db.run(
   `CREATE INDEX IF NOT EXISTS idx_clients_key_fingerprint ON clients(key_fingerprint);`,
 );
 db.run(

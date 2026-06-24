@@ -104,6 +104,9 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
   let streamState = "connecting";
   let frameWatchTimer = null;
   let offlineTimer = null;
+  let frameDecodeBusy = false;
+  let pendingFrame = null;
+  let hasCanvasBase = false;
   let pendingMove = null;
   let moveTimer = null;
   let videoDecoder = null;
@@ -1116,126 +1119,166 @@ import { createSharedUiSettingsSaver, loadSharedUiSettings } from "./shared-ui-s
     });
   }
 
-  async function onWsMessage(ev) {
+  function isFramePacket(buf) {
+    return buf.length >= 8 && buf[0] === 0x46 && buf[1] === 0x52 && buf[2] === 0x4d;
+  }
+
+  function markFrameReceived() {
+    lastFrameAt = performance.now();
+    clearOfflineTimer();
+    if (streamState !== "streaming") {
+      desiredStreaming = true;
+      setStreamState("streaming", "Streaming");
+    }
+  }
+
+  function drawJpegFallback(blob, target) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(blob);
+      img.onload = function () {
+        if (target) {
+          ctx.drawImage(img, target.x, target.y, target.w, target.h);
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+        }
+        URL.revokeObjectURL(url);
+        resolve(true);
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        resolve(false);
+      };
+      img.src = url;
+    });
+  }
+
+  async function drawJpegSlice(slice, target) {
+    const blob = new Blob([slice], { type: "image/jpeg" });
+    try {
+      const bitmap = await createImageBitmap(blob);
+      if (target) {
+        ctx.drawImage(bitmap, target.x, target.y, target.w, target.h);
+      } else {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        ctx.drawImage(bitmap, 0, 0);
+      }
+      bitmap.close();
+      return true;
+    } catch {
+      return drawJpegFallback(blob, target);
+    }
+  }
+
+  async function processFrameBuffer(buf) {
+    const fps = buf[5];
+    const format = buf[6];
+
+    if (format === 1) {
+      setCodecModeLabel("jpeg", "active");
+      await drawJpegSlice(buf.slice(8), null);
+      hasCanvasBase = true;
+      updateFpsDisplay(fps);
+      return;
+    }
+
+    if (format === 2 || format === 3) {
+      setCodecModeLabel(format === 3 ? "raw" : "jpeg", "blocks");
+      if (buf.length < 16) return;
+      const dv = new DataView(buf.buffer, 8);
+      let pos = 0;
+      const width = dv.getUint16(pos, true);
+      pos += 2;
+      const height = dv.getUint16(pos, true);
+      pos += 2;
+      const blockCount = dv.getUint16(pos, true);
+      pos += 4;
+
+      if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
+        canvas.width = width;
+        canvas.height = height;
+        hasCanvasBase = false;
+      }
+      if (blockCount > 0 && !hasCanvasBase) {
+        sendCmd("hvnc_request_keyframe", { reason: "viewer_missing_base" });
+        return;
+      }
+
+      for (let i = 0; i < blockCount; i++) {
+        if (pos + 12 > dv.byteLength) break;
+        const x = dv.getUint16(pos, true);
+        pos += 2;
+        const y = dv.getUint16(pos, true);
+        pos += 2;
+        const w = dv.getUint16(pos, true);
+        pos += 2;
+        const h = dv.getUint16(pos, true);
+        pos += 2;
+        const len = dv.getUint32(pos, true);
+        pos += 4;
+        const start = 8 + pos;
+        const end = start + len;
+        if (end > buf.length) break;
+        const slice = buf.subarray(start, end);
+        pos += len;
+        if (format === 2) {
+          await drawJpegSlice(slice, { x, y, w, h });
+        } else if (slice.length === w * h * 4) {
+          const imgData = new ImageData(new Uint8ClampedArray(slice), w, h);
+          ctx.putImageData(imgData, x, y);
+        }
+      }
+      updateFpsDisplay(fps);
+      return;
+    }
+
+    if (format === 4) {
+      setCodecModeLabel("h264", "active");
+      const h264Bytes = buf.slice(8);
+      if (!h264Bytes.length) return;
+      if (!ensureVideoDecoder()) {
+        fallbackToJpegCodec("WebCodecs decoder unavailable");
+        return;
+      }
+      const frameIntervalUs = Math.floor(1_000_000 / Math.max(1, fps || 25));
+      const chunk = new EncodedVideoChunk({
+        type: isH264KeyFrame(h264Bytes) ? "key" : "delta",
+        timestamp: h264TimestampUs,
+        data: h264Bytes,
+      });
+      h264TimestampUs += frameIntervalUs;
+      try {
+        videoDecoder.decode(chunk);
+        updateFpsDisplay(fps);
+      } catch (err) {
+        console.warn("hvnc: h264 decode failed", err);
+        fallbackToJpegCodec(err);
+      }
+    }
+  }
+
+  function flushPendingFrame() {
+    if (frameDecodeBusy || !pendingFrame) return;
+    const next = pendingFrame;
+    pendingFrame = null;
+    frameDecodeBusy = true;
+    processFrameBuffer(next).finally(() => {
+      frameDecodeBusy = false;
+      if (pendingFrame) flushPendingFrame();
+    });
+  }
+
+  function onWsMessage(ev) {
     if (ev.data instanceof ArrayBuffer) {
       const buf = new Uint8Array(ev.data);
-      if (buf.length >= 8 && buf[0] === 0x46 && buf[1] === 0x52 && buf[2] === 0x4d) {
-        const fps = buf[5];
-        const format = buf[6];
-        lastFrameAt = performance.now();
-        clearOfflineTimer();
-        if (streamState !== "streaming") {
-          desiredStreaming = true;
-          setStreamState("streaming", "Streaming");
-        }
-
-        if (format === 1) {
-          const jpegBytes = buf.slice(8);
-          setCodecModeLabel("jpeg", "active");
-          const blob = new Blob([jpegBytes], { type: "image/jpeg" });
-          try {
-            const bitmap = await createImageBitmap(blob);
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-            ctx.drawImage(bitmap, 0, 0);
-            bitmap.close();
-            updateFpsDisplay(fps);
-          } catch {
-            const img = new Image();
-            const url = URL.createObjectURL(blob);
-            img.onload = function () {
-              canvas.width = img.width;
-              canvas.height = img.height;
-              ctx.drawImage(img, 0, 0);
-              URL.revokeObjectURL(url);
-              updateFpsDisplay(fps);
-            };
-            img.src = url;
-          }
-          return;
-        }
-
-        if (format === 2 || format === 3) {
-          setCodecModeLabel(format === 3 ? "raw" : "jpeg", "blocks");
-          if (buf.length < 8 + 8) return;
-          const dv = new DataView(buf.buffer, 8);
-          let pos = 0;
-          const width = dv.getUint16(pos, true);
-          pos += 2;
-          const height = dv.getUint16(pos, true);
-          pos += 2;
-          const blockCount = dv.getUint16(pos, true);
-          pos += 2;
-          pos += 2;
-
-          if (
-            width > 0 &&
-            height > 0 &&
-            (canvas.width !== width || canvas.height !== height)
-          ) {
-            canvas.width = width;
-            canvas.height = height;
-          }
-          for (let i = 0; i < blockCount; i++) {
-            if (pos + 12 > dv.byteLength) break;
-            const x = dv.getUint16(pos, true);
-            pos += 2;
-            const y = dv.getUint16(pos, true);
-            pos += 2;
-            const w = dv.getUint16(pos, true);
-            pos += 2;
-            const h = dv.getUint16(pos, true);
-            pos += 2;
-            const len = dv.getUint32(pos, true);
-            pos += 4;
-            const start = 8 + pos;
-            const end = start + len;
-            if (end > buf.length) break;
-            const slice = buf.subarray(start, end);
-            pos += len;
-            if (format === 2) {
-              try {
-                const bitmap = await createImageBitmap(
-                  new Blob([slice], { type: "image/jpeg" }),
-                );
-                ctx.drawImage(bitmap, x, y, w, h);
-                bitmap.close();
-              } catch {}
-            } else {
-              if (slice.length === w * h * 4) {
-                const imgData = new ImageData(new Uint8ClampedArray(slice), w, h);
-                ctx.putImageData(imgData, x, y);
-              }
-            }
-          }
-          updateFpsDisplay(fps);
-          return;
-        }
-
-        if (format === 4) {
-          setCodecModeLabel("h264", "active");
-          const h264Bytes = buf.slice(8);
-          if (!h264Bytes.length) return;
-          if (!ensureVideoDecoder()) {
-            fallbackToJpegCodec("WebCodecs decoder unavailable");
-            return;
-          }
-          const frameIntervalUs = Math.floor(1_000_000 / Math.max(1, fps || 25));
-          const chunk = new EncodedVideoChunk({
-            type: isH264KeyFrame(h264Bytes) ? "key" : "delta",
-            timestamp: h264TimestampUs,
-            data: h264Bytes,
-          });
-          h264TimestampUs += frameIntervalUs;
-          try {
-            videoDecoder.decode(chunk);
-            updateFpsDisplay(fps);
-          } catch (err) {
-            console.warn("hvnc: h264 decode failed", err);
-            fallbackToJpegCodec(err);
-          }
-          return;
-        }
+      if (isFramePacket(buf)) {
+        markFrameReceived();
+        pendingFrame = buf;
+        flushPendingFrame();
+        return;
       }
 
       const msg = decodeMsgpack(buf);

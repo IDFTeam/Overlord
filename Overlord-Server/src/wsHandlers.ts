@@ -231,7 +231,7 @@ export function handlePong(info: ClientInfo, payload: WireMessage) {
   }
 }
 
-export function handleFrame(info: ClientInfo, payload: any) {
+export function handleFrame(info: ClientInfo, payload: any): boolean {
   const bytes = payload.data as unknown as Uint8Array;
   const header = (payload as any).header;
   const allowedFormats = ["jpeg", "jpg", "webp"];
@@ -240,28 +240,19 @@ export function handleFrame(info: ClientInfo, payload: any) {
 
   metrics.recordBytesReceived(bytes.length);
 
-  let sentToViewers = false;
+  let handledByViewerRelay = false;
   try {
     const globalAny: any = globalThis as any;
     if (header?.webcam) {
       if (globalAny.__webcamBroadcast) {
-        sentToViewers = globalAny.__webcamBroadcast(info.id, bytes, header);
-      }
-      if (sentToViewers) {
-        return;
+        handledByViewerRelay = globalAny.__webcamBroadcast(info.id, bytes, header);
       }
     } else if (header?.hvnc) {
       if (globalAny.__hvncBroadcast) {
-        sentToViewers = globalAny.__hvncBroadcast(info.id, bytes, header);
-      }
-      if (sentToViewers) {
-        return;
+        handledByViewerRelay = globalAny.__hvncBroadcast(info.id, bytes, header);
       }
     } else if (globalAny.__rdBroadcast) {
-      sentToViewers = globalAny.__rdBroadcast(info.id, bytes, header);
-      if (sentToViewers) {
-        return;
-      }
+      handledByViewerRelay = globalAny.__rdBroadcast(info.id, bytes, header);
     }
   } catch {}
 
@@ -280,4 +271,5 @@ export function handleFrame(info: ClientInfo, payload: any) {
       queueClientDbUpdate({ id: info.id, lastSeen: now, online: 1, isAdmin: info.isAdmin });
     }
   }
+  return handledByViewerRelay || safeFormat !== "";
 }

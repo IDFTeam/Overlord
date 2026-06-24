@@ -129,18 +129,28 @@ function getCaptureDllBytes(): Uint8Array | null {
 
 const VIEWER_BACKPRESSURE_BYTES = 2 * 1024 * 1024; // 2 MB
 
+type FrameBroadcastResult = {
+  sent: boolean;
+  dropped: boolean;
+  viewers: number;
+};
+
 function broadcastFrameToViewers(
   sessions: Iterable<{ viewer: ServerWebSocket<SocketData> }>,
   buf: Uint8Array,
   header?: any,
-): boolean {
+): FrameBroadcastResult {
   let sent = false;
+  let dropped = false;
+  let viewers = 0;
   const t0 = performance.now();
   const byteLen = buf.length;
   for (const session of sessions) {
+    viewers += 1;
     try {
       const buffered = session.viewer.getBufferedAmount?.() ?? 0;
       if (buffered > VIEWER_BACKPRESSURE_BYTES) {
+        dropped = true;
         continue;
       }
       session.viewer.send(buf);
@@ -157,7 +167,7 @@ function broadcastFrameToViewers(
     rdSendStats.sendMs += elapsed;
   }
   logRdSend(header);
-  return sent;
+  return { sent, dropped, viewers };
 }
 
 const rdSendStats = { lastLog: 0, frames: 0, sendMs: 0, bytes: 0 };
@@ -734,8 +744,17 @@ function broadcastRemoteDesktopFrame(clientId: string, bytes: Uint8Array, header
   recordRemoteDesktopFrame(clientId, header, bytes);
   const buf = buildViewerFrameBuffer(bytes, header);
   const sessions = sessionManager.getRdSessionsForClient(clientId);
-  const sent = broadcastFrameToViewers(sessions, buf, header);
-  return sent;
+  const result = broadcastFrameToViewers(sessions, buf, header);
+  if (result.dropped) {
+    const target = clientManager.getClient(clientId);
+    if (target) {
+      sendDesktopCommand(target, "desktop_request_keyframe", {
+        reason: "viewer_backpressure",
+        format: String(header?.format || ""),
+      });
+    }
+  }
+  return result.sent || result.viewers === 0;
 }
 
 (globalThis as any).__rdBroadcast = (clientId: string, bytes: Uint8Array, header?: any): boolean => {
@@ -1174,6 +1193,13 @@ export function handleHVNCViewerMessage(ws: ServerWebSocket<SocketData>, raw: st
       }
       break;
     }
+    case "hvnc_request_keyframe":
+      if (state.isStreaming) {
+        sendHVNCCommand(target, "hvnc_request_keyframe", {
+          reason: String((payload as any).reason || "viewer_request"),
+        });
+      }
+      break;
     case "hvnc_set_fps": {
       const newMaxFps = clampDesktopFps((payload as any).fps);
       if (state.maxFps !== newMaxFps) {
@@ -1375,12 +1401,23 @@ export function sendHVNCCommand(target: ClientInfo, commandType: string, payload
   }
   hvncStreamingState.set(clientId, state);
   const buf = buildViewerFrameBuffer(bytes, header);
-  return broadcastFrameToViewers(sessionManager.getHvncSessionsForClient(clientId), buf, header);
+  const result = broadcastFrameToViewers(sessionManager.getHvncSessionsForClient(clientId), buf, header);
+  if (result.dropped) {
+    const target = clientManager.getClient(clientId);
+    if (target) {
+      sendHVNCCommand(target, "hvnc_request_keyframe", {
+        reason: "viewer_backpressure",
+        format: String(header?.format || ""),
+      });
+    }
+  }
+  return result.sent || result.viewers === 0;
 };
 
 (globalThis as any).__webcamBroadcast = (clientId: string, bytes: Uint8Array, header?: any): boolean => {
   const buf = buildViewerFrameBuffer(bytes, header);
-  return broadcastFrameToViewers(sessionManager.getWebcamSessionsForClient(clientId), buf, header);
+  const result = broadcastFrameToViewers(sessionManager.getWebcamSessionsForClient(clientId), buf, header);
+  return result.sent || result.viewers === 0;
 };
 
 export function handleConsoleViewerMessage(ws: ServerWebSocket<SocketData>, raw: string | ArrayBuffer | Uint8Array) {

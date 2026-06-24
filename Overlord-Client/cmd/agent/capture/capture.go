@@ -622,6 +622,19 @@ func ResetPrevHVNC() {
 	resetH264EncoderHVNC()
 }
 
+func RequestDesktopFullFrame() {
+	requestFullFrames(2)
+	RequestDesktopH264Keyframe()
+}
+
+func RequestHVNCFullFrame() {
+	hvncPrevMu.Lock()
+	hvncPrevFrame = nil
+	hvncPrevMu.Unlock()
+	hvncLastKeyframe.Store(0)
+	resetH264EncoderHVNC()
+}
+
 func jpegQuality() int {
 
 	if q := overrideQuality.Load(); q > 0 {
@@ -1612,12 +1625,15 @@ func captureAndSendHVNC(ctx context.Context, env *rt.Env) error {
 	willSendViaWebRTC := blockCodec() == "h264" && webrtcpub.IsActive(webrtcpub.KindHVNC)
 	var slotAcquired bool
 	if !willSendViaWebRTC && !AcquireFrameSlot() {
+		PutRGBA(img)
 		return nil
 	}
 	slotAcquired = !willSendViaWebRTC
 
 	quality := jpegQuality()
 	frame, encodeDur, err := buildFrameHVNC(img, display, quality)
+	PutRGBA(img)
+	img = nil
 	if err != nil {
 		if slotAcquired {
 			ReleaseFrameSlot()

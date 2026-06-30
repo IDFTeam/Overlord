@@ -694,6 +694,7 @@ async function startServer() {
     notifyDashboard: sessionManager.notifyDashboardViewers,
     notifyDashboardClientEvent: sessionManager.notifyDashboardClientEvent,
     broadcastClientEvent: notificationPluginHandlers.broadcastClientLifecycleEvent,
+    handleCrashReport: notificationPluginHandlers.handleCrashReport,
   };
 
   const server = Bun.serve<SocketData>({

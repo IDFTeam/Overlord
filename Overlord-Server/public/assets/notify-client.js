@@ -271,13 +271,16 @@ function showDesktopNotification(item) {
   if (!("Notification" in window)) return;
   if (Notification.permission !== "granted") return;
 
-  const title = item.keyword
+  const title = item.category === "crash_report"
+    ? "Overlord \u2014 Crash Report"
+    : item.keyword
     ? `Overlord \u2014 ${item.keyword}`
     : "Overlord \u2014 Notification";
   const lines = [item.title];
   if (item.user) lines.push(`User: ${item.user}`);
   if (item.host) lines.push(`Host: ${item.host}`);
   if (item.process) lines.push(`Process: ${item.process}`);
+  if (item.detail) lines.push(String(item.detail).slice(0, 300));
   const body = lines.filter(Boolean).join("\n");
 
   fireNotification(title, body, `overlord-${item.id || Date.now()}`, "/notifications");

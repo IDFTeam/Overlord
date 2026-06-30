@@ -19,9 +19,10 @@ type NotificationRecord = {
   title: string;
   process?: string;
   processPath?: string;
+  detail?: string;
   pid?: number;
   keyword?: string;
-  category: "active_window" | "clipboard";
+  category: "active_window" | "clipboard" | "crash_report";
   ts: number;
   screenshotId?: string;
 };
@@ -368,6 +369,53 @@ export function createNotificationPluginHandlers(deps: CreateDeps) {
 
       deps.deliverNotificationWithScreenshot(record).catch((err) =>
         logger.warn("[notify] delivery failed", err),
+      );
+    },
+
+    handleCrashReport(
+      clientId: string,
+      crash: { reason: string; detail?: string; host?: string; user?: string; os?: string },
+    ) {
+      const reason = String(crash.reason || "").trim();
+      if (!reason) return;
+
+      const info = clientManager.getClient(clientId);
+      const detail = String(crash.detail || "").trim();
+      const record: NotificationRecord = {
+        id: uuidv4(),
+        clientId,
+        host: crash.host || info?.host,
+        user: crash.user || info?.user,
+        os: crash.os || info?.os,
+        title: `Client crash report: ${reason}`,
+        process: "crash report",
+        processPath: detail,
+        detail,
+        keyword: "crash",
+        category: "crash_report",
+        ts: Date.now(),
+      };
+
+      logger.warn(`[notify] crash report client=${clientId} reason=${reason}`);
+      saveNotification(record);
+
+      if (deps.isClientNotificationsMuted(clientId)) {
+        return;
+      }
+
+      for (const session of sessionManager.getAllNotificationSessions().values()) {
+        const sRole = session.userRole ?? session.viewer.data.userRole ?? "";
+        const sUserId = session.userId ?? session.viewer.data.userId;
+        if (sRole !== "admin") {
+          if (sUserId === undefined || !deps.canUserAccessClient(sUserId, sRole, clientId)) {
+            continue;
+          }
+        }
+        safeSendViewer(session.viewer, { type: "notification", item: record });
+      }
+
+      deps.deliverNotificationWithScreenshot(record).catch((err) =>
+        logger.warn("[notify] crash report delivery failed", err),
       );
     },
 

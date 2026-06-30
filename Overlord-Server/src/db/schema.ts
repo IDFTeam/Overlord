@@ -393,6 +393,7 @@ db.run(`
     title TEXT NOT NULL,
     process TEXT,
     process_path TEXT,
+    detail TEXT,
     pid INTEGER,
     keyword TEXT,
     category TEXT NOT NULL DEFAULT 'active_window',
@@ -400,6 +401,9 @@ db.run(`
     screenshot_id TEXT
   );
 `);
+try {
+  db.run(`ALTER TABLE notifications ADD COLUMN detail TEXT`);
+} catch {}
 db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_ts ON notifications(ts DESC);`);
 db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_client_id ON notifications(client_id);`);
 

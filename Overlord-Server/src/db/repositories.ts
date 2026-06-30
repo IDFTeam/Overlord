@@ -2067,6 +2067,7 @@ export type NotificationRow = {
   title: string;
   process?: string;
   processPath?: string;
+  detail?: string;
   pid?: number;
   keyword?: string;
   category: string;
@@ -2077,8 +2078,8 @@ export type NotificationRow = {
 export function saveNotification(record: NotificationRow) {
   db.run(
     `INSERT OR REPLACE INTO notifications
-      (id, client_id, host, user, os, title, process, process_path, pid, keyword, category, ts, screenshot_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, client_id, host, user, os, title, process, process_path, detail, pid, keyword, category, ts, screenshot_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     record.id,
     record.clientId,
     record.host ?? null,
@@ -2087,6 +2088,7 @@ export function saveNotification(record: NotificationRow) {
     record.title,
     record.process ?? null,
     record.processPath ?? null,
+    record.detail ?? null,
     record.pid ?? null,
     record.keyword ?? null,
     record.category,
@@ -2116,6 +2118,7 @@ export function getNotificationHistory(limit: number = 500): NotificationRow[] {
     title: row.title,
     process: row.process ?? undefined,
     processPath: row.process_path ?? undefined,
+    detail: row.detail ?? undefined,
     pid: row.pid ?? undefined,
     keyword: row.keyword ?? undefined,
     category: row.category,

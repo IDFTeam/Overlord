@@ -286,6 +286,10 @@ function sourceHtml(entry) {
       `<span class="text-xs text-slate-400">${escapeHtml(entry.item.event)}</span>`;
   }
   const isClipboard = entry.item.category === "clipboard";
+  const isCrash = entry.item.category === "crash_report";
+  if (isCrash) {
+    return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-900/60 text-red-300 border border-red-700/50"><i class="fa-solid fa-bug text-xs"></i> crash</span>`;
+  }
   return isClipboard
     ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-900/60 text-violet-300 border border-violet-700/50"><i class="fa-solid fa-clipboard text-xs"></i> clipboard</span>`
     : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-900/60 text-blue-300 border border-blue-700/50"><i class="fa-solid fa-desktop text-xs"></i> window</span>`;
@@ -302,6 +306,7 @@ function entryToRow(entry) {
     clientId: item.clientId || "",
     user: item.user || "-",
     title: entry.kind === "event" ? "client event" : (item.title || "-"),
+    detail: entry.kind === "event" ? "" : (item.detail || item.processPath || ""),
     process: entry.kind === "event" ? (item.os || "-") : (item.process || "-"),
     keyword: entry.kind === "event" ? "-" : (item.keyword || "-"),
     source: entry.kind === "event" ? (item.event || "") : (item.category || "window"),
@@ -319,6 +324,7 @@ function entryMatchesSearch(entry, query) {
     item.title,
     item.process,
     item.processPath,
+    item.detail,
     item.keyword,
     entry.kind === "event" ? item.event : item.category,
     item.os,
@@ -1107,7 +1113,11 @@ function initNotificationTable() {
         formatter: (cell) => {
           const row = cell.getRow().getData();
           const value = escapeHtml(cell.getValue() || "-");
+          const detail = escapeHtml(row.detail || "");
           const tone = row.kind === "event" ? "italic text-slate-400" : "text-slate-100";
+          if (row.item?.category === "crash_report" && detail) {
+            return `<div class="space-y-1"><span class="${tone}" title="${value}">${value}</span><div class="max-w-xl truncate font-mono text-xs text-red-300/80" title="${detail}">${detail}</div></div>`;
+          }
           return `<span class="${tone}" title="${value}">${value}</span>`;
         },
       },

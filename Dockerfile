@@ -13,8 +13,8 @@
 FROM oven/bun:1 AS builder
 WORKDIR /app
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/var/cache/apt,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/var/lib/apt,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         gcc-mingw-w64-x86-64 \
@@ -44,8 +44,8 @@ ENV GOPATH="/go"
 ENV GOCACHE=/root/.cache/go-build
 ENV GOMODCACHE=/go/pkg/mod
 
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+RUN --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/root/.cache/go-build,target=/root/.cache/go-build \
+    --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/go/pkg/mod,target=/go/pkg/mod \
     go install mvdan.cc/garble@latest
 
 # Pre-fetch the latest Donut shellcode converter binary.
@@ -80,7 +80,7 @@ RUN SGN_ASSET=$(curl -sSf "https://api.github.com/repos/EgeBalci/sgn/releases/la
 
 # Full bun install (includes devDeps needed for tailwind / vendor / minify steps)
 COPY Overlord-Server/package.json Overlord-Server/bun.lock* ./
-RUN --mount=type=cache,target=/root/.bun/install/cache \
+RUN --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/root/.bun/install/cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 
 # Server source (Overlord-Server/dist-clients may carry pre-built MSVC DLLs from CI)
@@ -131,8 +131,8 @@ WORKDIR /app
 # ffmpeg: server-side remote desktop recording encoder.
 # clang: fallback C compiler for darwin/CGO agent builds (no toolchain mapping in
 # toolchain-manager.ts, so build-process.ts falls back to the default `cc`).
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/var/cache/apt,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/var/lib/apt,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
         openssl \
         ca-certificates \
@@ -156,7 +156,7 @@ ENV GOMODCACHE=/go/pkg/mod
 
 # Production-only node_modules (drops tailwind, terser, postcss, typescript, ...).
 COPY Overlord-Server/package.json Overlord-Server/bun.lock* ./
-RUN --mount=type=cache,target=/root/.bun/install/cache \
+RUN --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/root/.bun/install/cache,target=/root/.bun/install/cache \
     bun install --production --frozen-lockfile
 
 # Built runtime artifacts from the builder stage.
@@ -170,8 +170,8 @@ COPY Overlord-Client/ ./Overlord-Client/
 RUN mkdir -p certs data
 
 # Pre-seed Go module cache so first agent builds work offline.
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
+RUN --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/root/.cache/go-build,target=/root/.cache/go-build \
+    --mount=type=cache,id=s/9c2d85b9-90d8-48ca-9ab2-194e7d37ab1b-/go/pkg/mod,target=/go/pkg/mod \
     cd /app/Overlord-Client && \
     GOWORK=off \
     GOMODCACHE=/go/pkg/mod \
